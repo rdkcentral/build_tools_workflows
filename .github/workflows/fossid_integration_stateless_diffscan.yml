@@ -15,7 +15,7 @@ on:
 jobs:
   run-fossid-cicd:
     name: Fossid Annotate PR
-    runs-on: comcast-ubuntu-latest
+    runs-on: ubuntu-latest
     container:
       image: quay.io/fossid/fossid-cicd:0.2.15
       credentials:
