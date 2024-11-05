@@ -1,0 +1,37 @@
+name: Fossid Pre-merge Stateless Diff Scan
+
+on:
+  workflow_call:
+    secrets:
+      FOSSID_CONTAINER_USERNAME:
+        required: true
+      FOSSID_CONTAINER_PASSWORD:
+        required: true
+      FOSSID_HOST_USERNAME:
+        required: true
+      FOSSID_HOST_TOKEN:
+        required: true
+
+jobs:
+  run-fossid-cicd:
+    name: Fossid Annotate PR
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/fossid/fossid-cicd:0.2.15
+      credentials:
+        username:  ${{ secrets.FOSSID_CONTAINER_USERNAME }}
+        password: '${{ secrets.FOSSID_CONTAINER_PASSWORD }}'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run fossid-cicd
+        env:
+          FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
+          FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
+        run: |
+          fossid-cicd \
+          diff-scan \
+          --fossid-host $FOSSID_HOST_USERNAME \
+          --fossid-token $FOSSID_HOST_TOKEN \
+          --github-workflow-errors \
+          --fail-on-any-issues 1
