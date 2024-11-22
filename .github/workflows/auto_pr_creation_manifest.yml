@@ -17,7 +17,7 @@ jobs:
           repository: rdkcentral/build_tools_workflows
           path: 'tools'
           ref: develop
-          token: ${{ secrets.rdke_github_token }}
+          token: ${{ secrets.rdkcentral_token }}
 
       - name: Checkout Manifest Repository
         uses: actions/checkout@v4
