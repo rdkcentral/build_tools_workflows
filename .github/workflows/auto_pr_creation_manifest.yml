@@ -1,0 +1,56 @@
+name: Update Manifests on Meta Repo Merge
+
+on:
+  workflow_call:
+    secrets:
+      rdkcentral_token:
+        required: true
+
+jobs:
+  auto_pr_creation_manifest:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    steps:
+      - name: Checkout build_tools_workflows code
+        uses: actions/checkout@v4
+        with:
+          repository: rdkcentral/build_tools_workflows
+          path: 'tools'
+          ref: develop
+          token: ${{ secrets.rdke_github_token }}
+
+      - name: Checkout Manifest Repository
+        uses: actions/checkout@v4
+        with:
+          repository: 'rdkcentral/rdke-middleware-generic-manifest-poc'
+          path: 'manifest_repo'
+          token: ${{ secrets.rdkcentral_token }}
+      
+      - name: Update Git Config
+        run: |
+            cd manifest_repo
+            git config user.name "<replace svc account name/vars>"
+            git config user.email "<replace svc account email/vars"
+            cd ..
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install requests PyGithub GitPython
+
+      - name: Run the update script
+        env:
+          GITHUB_TOKEN: ${{ secrets.rdkcentral_token }}
+          GITHUB_ORG: 'rdkcentral'
+          MANIFEST_REPO_PATH: ${{ github.workspace }}/manifest_repo
+          MANIFEST_REPO_NAME: 'rdkcentral/rdke-middleware-generic-manifest-poc'
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+            cd manifest_repo
+            python3 ../tools/build_health_check_workflow_scripts/auto_pr_generation_manifest.py
+            cd ..
