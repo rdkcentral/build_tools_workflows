@@ -1,4 +1,4 @@
-name: BHC Auto-Merge
+name: Auto-Merge Manifest
 
 on:
     workflow_call:
