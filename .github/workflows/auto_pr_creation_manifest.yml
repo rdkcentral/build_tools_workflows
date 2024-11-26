@@ -16,7 +16,7 @@ jobs:
         with:
           repository: rdkcentral/build_tools_workflows
           path: 'tools'
-          ref: develop
+          ref: auto_pr_workflows_poc
           token: ${{ secrets.RDKCM_RDKE }}
 
       - name: Checkout Manifest Repository
