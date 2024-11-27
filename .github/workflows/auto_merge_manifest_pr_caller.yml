@@ -10,4 +10,4 @@ jobs:
   call_auto_pr_workflow:
     uses: rdkcentral/build_tools_workflows/.github/workflows/bhc_auto_merge_manifest_pr.yml@develop
     secrets:
-      rdke_github_token: ${{ secrets.rdkcentral_token }}
+      RDKCM_RDKE: ${{ secrets.RDKCM_RDKE }}
