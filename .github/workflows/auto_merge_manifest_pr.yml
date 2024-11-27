@@ -23,4 +23,4 @@ jobs:
           # Merge the PR
           gh pr merge ${{ github.event.pull_request.number }} --merge --admin
         env:
-          GITHUB_TOKEN: ${{ secrets.rdkcentral_token }}
+          GITHUB_TOKEN: ${{ secrets.RDKCM_RDKE }}
