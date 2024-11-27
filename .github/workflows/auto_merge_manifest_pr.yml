@@ -3,7 +3,7 @@ name: Auto-Merge Manifest
 on:
     workflow_call:
         secrets:
-            rdkcentral_token:
+            RDKCM_RDKE:
                 required: true
     
 jobs:
