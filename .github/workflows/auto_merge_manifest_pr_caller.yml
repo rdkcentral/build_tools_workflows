@@ -8,6 +8,6 @@ on:
 
 jobs:
   call_auto_pr_workflow:
-    uses: rdkcentral/build_tools_workflows/.github/workflows/bhc_auto_merge_manifest_pr.yml@develop
+    uses: rdkcentral/build_tools_workflows/.github/workflows/bhc_auto_merge_manifest_pr.yml@auto_pr_workflows_poc
     secrets:
       RDKCM_RDKE: ${{ secrets.RDKCM_RDKE }}
