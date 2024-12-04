@@ -74,7 +74,7 @@ def fetch_merge_commits(owner, repo, pr_number, github_token):
     }
     response = requests.post(url, json={'query': query, 'variables': variables}, headers=headers)
     result = response.json()
-    #print(result)
+    print(result)
 
     prs = []
     main_pr_merge_commit = None
