@@ -1,0 +1,13 @@
+name: Auto Merge Manifest PR Caller
+
+on:
+  pull_request:
+    types: [labeled]
+    branches:
+      - develop
+
+jobs:
+  call_auto_pr_workflow:
+    uses: rdkcentral/build_tools_workflows/.github/workflows/bhc_auto_merge_manifest_pr.yml@develop
+    secrets:
+      RDKCM_RDKE: ${{ secrets.RDKCM_RDKE }}
