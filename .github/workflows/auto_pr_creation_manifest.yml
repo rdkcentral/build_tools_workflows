@@ -29,8 +29,8 @@ jobs:
       - name: Update Git Config
         run: |
             cd manifest_repo
-            git config user.name "<replace svc account name/vars>"
-            git config user.email "<replace svc account email/vars"
+            git config user.name "${{ vars.rdkcentral_ACCOUNT_USERNAME }}"
+            git config user.email "${{ vars.rdkcentral_ACCOUNT_EMAIL }}"
             cd ..
 
       - name: Set up Python
