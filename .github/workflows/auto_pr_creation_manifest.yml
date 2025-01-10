@@ -16,7 +16,7 @@ jobs:
         with:
           repository: rdkcentral/build_tools_workflows
           path: 'tools'
-          ref: auto_pr_workflows_poc
+          ref: develop
           token: ${{ secrets.RDKCM_RDKE }}
 
       - name: Checkout Manifest Repository
@@ -50,6 +50,7 @@ jobs:
           MANIFEST_REPO_PATH: ${{ github.workspace }}/manifest_repo
           MANIFEST_REPO_NAME: 'rdkcentral/rdke-middleware-generic-manifest-poc'
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
             cd manifest_repo
             python3 ../tools/build_health_check_workflow_scripts/auto_pr_generation_manifest.py

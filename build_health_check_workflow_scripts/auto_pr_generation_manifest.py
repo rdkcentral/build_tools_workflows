@@ -213,7 +213,7 @@ def ensure_label_exists(repo, label_name, color='FFFFFF'):
       print("Label '{}' already exists.".format(label_name))
 
 #Create or checkout the branch in the local manifest repository
-def create_or_checkout_branch(repo, branch_name):
+def create_or_checkout_branch(repo, branch_name, base_branch):
     
     try:
         # Fetch all branches from the remote
@@ -225,9 +225,9 @@ def create_or_checkout_branch(repo, branch_name):
             print("Branch {} already exists remotely. Stopping further processing.".format(branch_name))
             sys.exit(1)  # Exit with a non-zero code to signal that the branch already exists
         else:
-            # Switch to 'develop' and pull the latest changes to ensure local repo is up-to-date
-            repo.git.checkout('develop')
-            repo.git.pull('origin', 'develop')
+            # Switch to 'base_branch' and pull the latest changes to ensure local repo is up-to-date
+            repo.git.checkout(base_branch)
+            repo.git.pull('origin', base_branch)
 
             # Create and check out the new branch locally
             repo.git.checkout('-b', branch_name)
@@ -247,6 +247,7 @@ def main():
     manifest_repo_name = os.getenv('MANIFEST_REPO_NAME')
     repo_name = os.getenv('GITHUB_REPOSITORY')
     repo_owner = os.getenv('GITHUB_ORG')
+    base_branch = os.getenv('BASE_BRANCH')
 
     g = Github(github_token)
     repo = g.get_repo(repo_name)
@@ -266,7 +267,7 @@ def main():
 
     # Create or check out the branch in the local manifest repository
     repo = Repo(manifest_repo_path)
-    create_or_checkout_branch(repo, feature_branch)
+    create_or_checkout_branch(repo, feature_branch, base_branch)
     time.sleep(5)
 
     # Set the new PR title and description
@@ -281,7 +282,7 @@ def main():
     changes_made = update_xml_files(manifest_repo_path, updates)
     if changes_made:  
       commit_and_push(manifest_repo_path, "Update manifest for {}".format(','.join(updates.keys())))
-      create_pull_request(github_token, manifest_repo_name, feature_branch, 'develop', manifest_pr_title, manifest_pr_description)
+      create_pull_request(github_token, manifest_repo_name, feature_branch, base_branch, manifest_pr_title, manifest_pr_description)
 
 if __name__ == '__main__':
     main()
