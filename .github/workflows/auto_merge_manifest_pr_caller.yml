@@ -5,6 +5,7 @@ on:
     types: [labeled]
     branches:
       - develop
+      - support/dunfell
 
 jobs:
   call_auto_pr_workflow:
