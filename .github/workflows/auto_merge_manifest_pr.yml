@@ -18,9 +18,11 @@ jobs:
         run: |
           echo "Automatically merging PR #${{ github.event.pull_request.number }}"
           # Set up Git to push
-            git config user.name "${{ vars.rdkcentral_ACCOUNT_USERNAME }}"
-            git config user.email "${{ vars.rdkcentral_ACCOUNT_EMAIL }}"
+            git config user.name "bot"
+            git config user.email "$BOT_EMAIL"
           # Merge the PR
           gh pr merge ${{ github.event.pull_request.number }} --merge --admin
         env:
           GITHUB_TOKEN: ${{ secrets.RDKCM_RDKE }}
+          BOT_EMAIL: ${{ vars.RDKM_BOT_EMAIL }}
+
