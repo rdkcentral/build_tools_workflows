@@ -27,10 +27,12 @@ jobs:
           token: ${{ secrets.RDKCM_RDKE }}
       
       - name: Update Git Config
+        env:
+          BOT_EMAIL: ${{ vars.RDKM_BOT_EMAIL }}
         run: |
             cd manifest_repo
-            git config user.name "<enter the name>"
-            git config user.email "<enter the email>"
+            git config user.name "bot"
+            git config user.email "$BOT_EMAIL"
             cd ..
 
       - name: Set up Python
