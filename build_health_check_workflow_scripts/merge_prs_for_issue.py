@@ -148,7 +148,7 @@ def get_linked_pull_requests_details(repo_name, issue_number, github_token, owne
 def main():
     issue_number = sys.argv[1]
     repo = sys.argv[2]
-    token = os.environ.get('RDKCM_RDKE').strip()
+    token = os.environ.get('GITHUB_TOKEN').strip()
     owner, repo_name = repo.split('/')
 
     pr_details = get_linked_pull_requests_details(repo_name, issue_number, token, owner)
