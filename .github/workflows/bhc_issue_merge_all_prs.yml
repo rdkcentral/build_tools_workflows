@@ -39,4 +39,4 @@ jobs:
         ISSUE_NUMBER: ${{ github.event.inputs.issueNumber }}
         REPO_NAME: ${{ github.repository }}
       run: |
-        python3 tools/build_health_check_issues_topic_scripts/merge_prs_for_issue.py ${{ github.event.inputs.issueNumber }} ${{ github.repository }}
+        python3 tools/build_health_check_workflow_scripts/merge_prs_for_issue.py ${{ github.event.inputs.issueNumber }} ${{ github.repository }}
