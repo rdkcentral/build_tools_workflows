@@ -3,7 +3,7 @@ on:
   workflow_call:
     inputs:
       issueURL:
-        description: 'Please Enter the Issue URL, eg: https://github.com/rdk-e/meta-rdk-video/issues/2407'
+        description: 'Please Enter the Issue URL, eg: https://github.com/rdkcentral/meta-rdk-video/issues/2407'
         required: true
         type: string
     secrets:
