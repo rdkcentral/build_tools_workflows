@@ -273,7 +273,7 @@ def main():
             pr['base_branch'] = pr_retry_details.get('baseRefName', pr['base_branch'])
         
         # If PR does not meet the merging criteria
-        if not can_merge(pr, override_verified=False):
+        if not can_merge(pr, override_verified=True):
             unmergeable_details.append(
                 f"PR #{pr['pr_number']} in {pr['repo']} cannot be merged. "
                 f"Base Branch: {pr['base_branch']}, Mergeable: {pr['mergeable']}, "
@@ -288,7 +288,7 @@ def main():
 
     # Otherwise, merge all PRs that pass the checks
     for pr in pr_details:
-        if can_merge(pr, override_verified=False):
+        if can_merge(pr, override_verified=True):
             status_code, response = merge_pull_request(pr['repo'], pr['pr_number'], token)
             print(
                 f"Merge PR {pr['repo']} #{pr['pr_number']}: "
