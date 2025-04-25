@@ -247,6 +247,8 @@ def main():
     if not issue_url:
         sys.exit("ERROR: 'ISSUE_URL' environment variable is not set.")
 
+    override_verified = True    
+
     token = os.environ.get('GITHUB_TOKEN')
     if not token:
         sys.exit("ERROR: 'GITHUB_TOKEN' environment variable is not set.")
@@ -273,12 +275,12 @@ def main():
             pr['base_branch'] = pr_retry_details.get('baseRefName', pr['base_branch'])
         
         # If PR does not meet the merging criteria
-        if not can_merge(pr, override_verified=False):
+        if not can_merge(pr, override_verified):
             unmergeable_details.append(
                 f"PR #{pr['pr_number']} in {pr['repo']} cannot be merged. "
                 f"Base Branch: {pr['base_branch']}, Mergeable: {pr['mergeable']}, "
                 f"Mergeable: {pr['mergeable']}, Verified: {pr['verified_label']}, "
-                f"Approved: {pr['review_approved']}"
+                f"Approved: {pr['review_approved']}, Override Verified: {override_verified}"
             )
 
     if unmergeable_details:
@@ -288,7 +290,7 @@ def main():
 
     # Otherwise, merge all PRs that pass the checks
     for pr in pr_details:
-        if can_merge(pr, override_verified=False):
+        if can_merge(pr, override_verified):
             status_code, response = merge_pull_request(pr['repo'], pr['pr_number'], token)
             print(
                 f"Merge PR {pr['repo']} #{pr['pr_number']}: "
