@@ -9,14 +9,14 @@ on:
 jobs:
   auto_pr_creation_manifest:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true
+    #if: github.event.pull_request.merged == true
     steps:
       - name: Checkout build_tools_workflows code
         uses: actions/checkout@v4
         with:
           repository: rdkcentral/build_tools_workflows
           path: 'tools'
-          ref: develop
+          ref: RDKEMW-4778
           token: ${{ secrets.RDKCM_RDKE }}
 
       # - name: Checkout Manifest Repository
