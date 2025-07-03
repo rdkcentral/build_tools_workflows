@@ -7,7 +7,7 @@ on:
         required: true
 
 jobs:
-  auto_pr_creation_manifest:
+  auto_pr_creation_meta:
     runs-on: ubuntu-latest
     #if: github.event.pull_request.merged == true
     steps:
@@ -19,32 +19,32 @@ jobs:
           ref: RDKEMW-4778
           token: ${{ secrets.RDKCM_RDKE }}
 
-      - name: Checkout Manifest Repository
+      - name: Checkout Meta Repository
         uses: actions/checkout@v4
         with:
           repository: 'rdkcentral/meta-rdk-video'
-          path: 'maeta_repo'
+          path: 'meta_repo'
           ref: RDKEMW-4778
           token: ${{ secrets.RDKCM_RDKE }}
       
-      # - name: Update Git Config
-      #   env:
-      #     BOT_EMAIL: ${{ vars.RDKM_BOT_EMAIL }}
-      #   run: |
-      #       cd manifest_repo
-      #       git config user.name "bot"
-      #       git config user.email "$BOT_EMAIL"
-      #       cd ..
+      - name: Update Git Config
+        env:
+          BOT_EMAIL: ${{ vars.RDKM_BOT_EMAIL }}
+        run: |
+            cd meta_repo
+            git config user.name "bot"
+            git config user.email "$BOT_EMAIL"
+            cd ..
 
-      # - name: Set up Python
-      #   uses: actions/setup-python@v4
-      #   with:
-      #     python-version: '3.x'
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
 
-      # - name: Install Python dependencies
-      #   run: |
-      #     python3 -m pip install --upgrade pip
-      #     pip install requests PyGithub GitPython
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install requests PyGithub GitPython
 
       # - name: Run the update script
       #   env:
