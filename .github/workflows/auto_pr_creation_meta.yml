@@ -19,12 +19,13 @@ jobs:
           ref: RDKEMW-4778
           token: ${{ secrets.RDKCM_RDKE }}
 
-      # - name: Checkout Manifest Repository
-      #   uses: actions/checkout@v4
-      #   with:
-      #     repository: 'rdkcentral/rdke-middleware-generic-manifest'
-      #     path: 'manifest_repo'
-      #     token: ${{ secrets.RDKCM_RDKE }}
+      - name: Checkout Manifest Repository
+        uses: actions/checkout@v4
+        with:
+          repository: 'rdkcentral/meta-rdk-video'
+          path: 'maeta_repo'
+          ref: RDKEMW-4778
+          token: ${{ secrets.RDKCM_RDKE }}
       
       # - name: Update Git Config
       #   env:
