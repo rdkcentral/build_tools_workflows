@@ -141,11 +141,15 @@ def write_xml(element, file_path):
 def update_xml_files(manifest_repo_path, updates):
 
   repo = Repo(manifest_repo_path)
-  # Find the .bb recipe file (assuming only one entservices-inputoutput.bb in the repo)
+
+  # Recursively search for entservices-inputoutput.bb in all subdirectories
   bb_file = None
-  for f in os.listdir(manifest_repo_path):
-      if f == 'entservices-inputoutput.bb':
-          bb_file = os.path.join(manifest_repo_path, f)
+  for root, dirs, files in os.walk(manifest_repo_path):
+      for f in files:
+          if f == 'entservices-inputoutput.bb':
+              bb_file = os.path.join(root, f)
+              break
+      if bb_file:
           break
 
   if not bb_file:
