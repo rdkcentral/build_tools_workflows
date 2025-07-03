@@ -141,33 +141,41 @@ def write_xml(element, file_path):
 def update_xml_files(manifest_repo_path, updates):
 
   repo = Repo(manifest_repo_path)
-  xml_files = [f for f in os.listdir(manifest_repo_path) if f.endswith('.xml')]
-  changes_made = False  # Flag to check if any changes are made
+  # Find the .bb recipe file (assuming only one entservices-inputoutput.bb in the repo)
+  bb_file = None
+  for f in os.listdir(manifest_repo_path):
+      if f == 'entservices-inputoutput.bb':
+          bb_file = os.path.join(manifest_repo_path, f)
+          break
 
-  for xml_file in xml_files:
-    xml_path = os.path.join(manifest_repo_path, xml_file)
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
-    file_changed = False
+  if not bb_file:
+      print("No entservices-inputoutput.bb recipe file found.")
+      return False
 
-    for project in root.findall('project'):
-      if project.get('name') in updates and project.get('revision') != updates[project.get('name')]:
-        print("Updating {}: {} from {} to {}".format(xml_file, project.get('name'), project.get('revision'), updates[project.get('name')]))
-        project.set('revision', updates[project.get('name')])
-        file_changed = True
+  # Get the new SHA (assume only one update, as in your usage)
+  new_srcrev = list(updates.values())[0]
+  changed = False
+  with open(bb_file, 'r') as f:
+      lines = f.readlines()
 
-    if file_changed:
-        write_xml(root, xml_path)
-        print("Updated {}".format(xml_file))
-        changes_made = True
 
-  if changes_made:
-    repo.git.add(all=True)
+
+  with open(bb_file, 'w') as f:
+      for line in lines:
+          if line.strip().startswith('SRCREV ='):
+              old_line = line.strip()
+              f.write(f'SRCREV = "{new_srcrev}"\n')
+              print(f"Updated SRCREV in {bb_file}: {old_line} -> SRCREV = \"{new_srcrev}\"")
+              changed = True
+          else:
+              f.write(line)
+
+  if changed:
+      repo.git.add(bb_file)
   else:
-    print("No changes were made to XML files.")
+      print("No changes were made to SRCREV in the recipe file.")
 
-  return changes_made
-
+  return changed
 #Build the PR list description
 def build_pr_list_description(prs):
 
