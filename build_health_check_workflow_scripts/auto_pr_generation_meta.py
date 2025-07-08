@@ -191,6 +191,7 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         repo_name = update['repo']
         sha = update['sha']
         tag = update.get('tag')
+        print(f"[DEBUG] Processing update: repo={repo_name}, sha={sha}, tag={tag}")
         # Determine .bb and pkgrev.inc paths
         if repo_name.startswith('rdkcentral/entservices-'):
             comp = repo_name.split('/')[-1]
@@ -205,7 +206,10 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             pkgrev_key = 'rdkservices-comcast'
             pkgrev_pv_field = f'{pkgrev_key}_PV'
         else:
+            print(f"[DEBUG] Skipping repo {repo_name} (not handled)")
             continue
+        print(f"[DEBUG] bb_file: {bb_file}")
+        print(f"[DEBUG] pkgrev_file: {pkgrev_file}")
         # Update .bb file SRCREV
         if os.path.exists(bb_file):
             with open(bb_file, 'r') as f:
@@ -214,6 +218,7 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             with open(bb_file, 'w') as f:
                 for line in lines:
                     if line.strip().startswith('SRCREV ='):
+                        print(f"[DEBUG] Updating SRCREV in {bb_file} to {sha}")
                         f.write(f'SRCREV = "{sha}"\n')
                         file_changed = True
                     else:
@@ -221,6 +226,11 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             if file_changed:
                 repo.git.add(bb_file)
                 changed = True
+                print(f"[DEBUG] Changed {bb_file}")
+            else:
+                print(f"[DEBUG] No change needed for {bb_file}")
+        else:
+            print(f"[DEBUG] .bb file does not exist: {bb_file}")
         # Update generic-pkgrev.inc PV
         if tag and os.path.exists(pkgrev_file):
             with open(pkgrev_file, 'r') as f:
@@ -230,12 +240,14 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                 for line in lines:
                     if repo_name.startswith('rdkcentral/entservices-'):
                         if line.strip().startswith(f'{pkgrev_pv_field} ='):
+                            print(f"[DEBUG] Updating PV in {pkgrev_file} to {tag}")
                             f.write(f'{pkgrev_pv_field} = "{tag}"\n')
                             file_changed = True
                         else:
                             f.write(line)
                     else:
                         if line.strip().startswith(f'{pkgrev_pv_field} ='):
+                            print(f"[DEBUG] Updating PV in {pkgrev_file} to {tag}")
                             f.write(f'{pkgrev_pv_field} = "{tag}"\n')
                             file_changed = True
                         else:
@@ -243,6 +255,14 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             if file_changed:
                 repo.git.add(pkgrev_file)
                 changed = True
+                print(f"[DEBUG] Changed {pkgrev_file}")
+            else:
+                print(f"[DEBUG] No change needed for {pkgrev_file}")
+        elif tag:
+            print(f"[DEBUG] pkgrev_file does not exist: {pkgrev_file}")
+        else:
+            print(f"[DEBUG] No tag found for {repo_name}, skipping PV update.")
+    print(f"[DEBUG] update_bb_and_pkgrev changed={changed}")
     return changed
 #Build the PR list description
 def build_pr_list_description(prs):
@@ -373,14 +393,17 @@ def main():
  
     prs, issue_repo_name, issue_number = fetch_merge_commits(repo_owner, repo_name, int(pr_number), github_token)
     # For each PR, get the tag from GitHub
+    print(f"[DEBUG] PRs to process: {prs}")
     updates = []
     for pr in prs:
         tag = get_tag_for_sha(github_token, pr['repo'], pr['sha'])
+        print(f"[DEBUG] Tag for {pr['repo']} at {pr['sha']}: {tag}")
         updates.append({'repo': pr['repo'], 'sha': pr['sha'], 'tag': tag})
 
     print("Updates to be pushed to feature branch: {}".format(updates))
 
     changes_made = update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates)
+    print(f"[DEBUG] changes_made: {changes_made}")
     if changes_made:
         commit_and_push(
             manifest_repo_path,
@@ -394,6 +417,8 @@ def main():
             manifest_pr_title,
             manifest_pr_description
         )
+    else:
+        print("[DEBUG] No changes detected, PR will not be created.")
 # ...existing code...
 if __name__ == '__main__':
     main()
