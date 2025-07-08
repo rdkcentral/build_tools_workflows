@@ -52,6 +52,7 @@ jobs:
           GITHUB_ORG: 'rdkcentral'
           META_REPO_PATH: ${{ github.workspace }}/meta_repo
           META_REPO_NAME: 'rdkcentral/meta-rdk-video'
+          GENERIC_SUPPORT_PATH: 'rdkcentral/meta-middleware-generic-support'
           PR_NUMBER: 111
           BASE_BRANCH: develop
         run: |
