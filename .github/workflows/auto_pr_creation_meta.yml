@@ -27,6 +27,14 @@ jobs:
           ref: RDKEMW-4778
           token: ${{ secrets.RDKCM_RDKE }}
       
+      - name: Checkout meta-middleware-generic-support
+        uses: actions/checkout@v4
+        with:
+          repository: 'rdkcentral/meta-middleware-generic-support'
+          path: 'rdkcentral/meta-middleware-generic-support'
+          ref: RDKEMW-4778
+          token: ${{ secrets.RDKCM_RDKE }}
+
       - name: Update Git Config
         env:
           BOT_EMAIL: ${{ vars.RDKM_BOT_EMAIL }}
