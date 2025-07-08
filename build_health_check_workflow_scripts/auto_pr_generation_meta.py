@@ -245,7 +245,9 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             with open(bb_file, 'r') as f:
                 lines = f.readlines()
             file_changed = False
-            tag_to_use = tag if tag else '1.0.0'
+            if not tag:
+                raise RuntimeError(f"No tag found that contains commit {sha} for repo {repo_name}")
+            tag_to_use = tag
             with open(bb_file, 'w') as f:
                 for line in lines:
                     if line.strip().startswith('SRCREV ='):
@@ -290,7 +292,9 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             print(f"[DEBUG] Support .bb file does not exist: {support_bb_file}")
 
         # Only update pkgrev_file in support layer repo
-        tag_to_use = tag if tag else '1.0.0'
+        if not tag:
+            raise RuntimeError(f"No tag found that contains commit {sha} for repo {repo_name}")
+        tag_to_use = tag
         if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
             with open(pkgrev_file, 'r') as f:
                 lines = f.readlines()
@@ -475,6 +479,8 @@ def main():
     for pr in prs:
         tag = get_tag_for_sha(github_token, pr['repo'], pr['sha'])
         print(f"[DEBUG] Tag for {pr['repo']} at {pr['sha']}: {tag}")
+        if not tag:
+            raise RuntimeError(f"No tag found that contains commit {pr['sha']} for repo {pr['repo']}")
         updates.append({'repo': pr['repo'], 'sha': pr['sha'], 'tag': tag})
 
     print("Updates to be pushed to feature branch: {}".format(updates))
@@ -492,7 +498,7 @@ def main():
     if changes_made:
         commit_and_push(
             manifest_repo_path,
-            "Update manifest and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag'] if u['tag'] else '1.0.0'}" for u in updates]))
+            "Update manifest and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
         )
         create_pull_request(
             github_token,
@@ -514,7 +520,7 @@ def main():
             create_or_checkout_branch(support_repo, support_branch, base_branch)
             commit_and_push(
                 generic_support_path,
-                "Update support layer entservices SRCREV for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag'] if u['tag'] else '1.0.0'}" for u in updates]))
+                "Update support layer entservices SRCREV for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
             )
             create_pull_request(
                 github_token,
