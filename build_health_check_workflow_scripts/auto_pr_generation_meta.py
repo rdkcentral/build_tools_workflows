@@ -423,7 +423,7 @@ def get_tag_for_sha(github_token, repo_full_name, sha):
     from packaging.version import Version, InvalidVersion
     g = Github(github_token)
     repo = g.get_repo(repo_full_name)
-    tags = list(repo.get_tags())
+    tags = [tag for tag in repo.get_tags() if re.match(r'^\d+\.\d+\.\d+$', tag.name)]
     # Try exact match first
     for tag in tags:
         if tag.commit.sha.startswith(sha):
