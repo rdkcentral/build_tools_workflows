@@ -438,6 +438,7 @@ def get_tag_for_sha(github_token, repo_full_name, sha):
                 tags_with_commit.append(tag)
     except Exception as e:
         print(f"[DEBUG] Error checking if tag contains commit: {e}")
+
     # Sort tags_with_commit by semantic version (lowest first)
     def version_key(tag):
         try:
@@ -445,6 +446,24 @@ def get_tag_for_sha(github_token, repo_full_name, sha):
         except InvalidVersion:
             return Version('0.0.0')
     tags_with_commit.sort(key=version_key)
+
+    # Now, for each tag (in ascending order), check if the previous (lower) tag does NOT contain the commit
+    for i, tag in enumerate(tags_with_commit):
+        if i == 0:
+            # If this is the lowest tag that contains the commit, always return it
+            return tag.name
+        prev_tag = tags_with_commit[i-1]
+        # Check if previous tag contains the commit
+        try:
+            prev_tag_commit = repo.get_commit(prev_tag.commit.sha)
+            comparison = repo.compare(sha, prev_tag_commit.sha)
+            if comparison.status != 'ahead':
+                # Previous tag does NOT contain the commit, so this is the first tag that does
+                return tag.name
+        except Exception as e:
+            print(f"[DEBUG] Error comparing with previous tag: {e}")
+            return tag.name
+    # Fallback: if all lower tags also contain the commit, return the lowest
     if tags_with_commit:
         return tags_with_commit[0].name
     return None
