@@ -254,18 +254,18 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             with open(bb_file, 'w') as f:
                 for line in lines:
                     line_stripped = line.strip()
-                    # Match SRCREV, SRCREV ?=, or SRCREV_<component> =
+                    # Match SRCREV, SRCREV ?=, or SRCREV_<component> = (component always lower case)
                     if (
                         line_stripped.startswith('SRCREV =') or
                         line_stripped.startswith('SRCREV ?=') or
-                        (line_stripped.startswith(f'SRCREV_{comp.upper()} =') if comp else False)
+                        (line_stripped.startswith(f'SRCREV_{comp} =') if comp else False)
                     ):
                         print(f"[DEBUG] Updating SRCREV in {bb_file} to {sha}")
                         # Preserve the assignment type (e.g., =, ?=)
                         if 'SRCREV ?=' in line_stripped:
                             f.write(f'SRCREV ?= "{sha}"\n')
-                        elif f'SRCREV_{comp.upper()} =' in line_stripped:
-                            f.write(f'SRCREV_{comp.upper()} = "{sha}"\n')
+                        elif f'SRCREV_{comp} =' in line_stripped:
+                            f.write(f'SRCREV_{comp} = "{sha}"\n')
                         else:
                             f.write(f'SRCREV = "{sha}"\n')
                         file_changed = True
