@@ -403,10 +403,30 @@ def get_tag_for_sha(github_token, repo_full_name, sha):
     """
     g = Github(github_token)
     repo = g.get_repo(repo_full_name)
-    tags = repo.get_tags()
+    tags = list(repo.get_tags())
+    # Try exact match first
     for tag in tags:
         if tag.commit.sha.startswith(sha):
             return tag.name
+    # If not found, walk back up to 10 parent commits from the merge commit
+    try:
+        commit = repo.get_commit(sha)
+        visited = set()
+        queue = [(commit, 0)]
+        max_depth = 10
+        while queue:
+            current_commit, depth = queue.pop(0)
+            if current_commit.sha in visited or depth > max_depth:
+                continue
+            visited.add(current_commit.sha)
+            for tag in tags:
+                if tag.commit.sha == current_commit.sha:
+                    return tag.name
+            # Add parents to queue
+            for parent in current_commit.parents:
+                queue.append((parent, depth + 1))
+    except Exception as e:
+        print(f"[DEBUG] Error walking parent commits for tag lookup: {e}")
     return None
 
 def main():
