@@ -414,9 +414,15 @@ def main():
     changes_made = update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates)
     print(f"[DEBUG] changes_made: {changes_made}")
     if changes_made:
+        # Generate a feature branch name and PR title/description
+        feature_branch = f"auto-update-{ticket_number.lower()}"
+        manifest_pr_title = f"[Auto] Update meta layer for {ticket_number}"
+        manifest_pr_description = build_pr_list_description(updates)
+
+        create_or_checkout_branch(Repo(manifest_repo_path), feature_branch, base_branch)
         commit_and_push(
             manifest_repo_path,
-            "Update manifest and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
+            "Update manifest and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag'] if u['tag'] else '1.0.0'}" for u in updates]))
         )
         create_pull_request(
             github_token,
