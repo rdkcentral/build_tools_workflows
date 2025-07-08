@@ -322,6 +322,19 @@ def build_pr_list_description(prs):
 def commit_and_push(manifest_repo_path, commit_message):
     repo = Repo(manifest_repo_path)
     if repo.is_dirty():
+        # Ensure git user.name and user.email are set
+        config_writer = repo.config_writer()
+        try:
+            user_name = config_writer.get_value('user', 'name', None)
+            user_email = config_writer.get_value('user', 'email', None)
+        except Exception:
+            user_name = None
+            user_email = None
+        if not user_name:
+            config_writer.set_value('user', 'name', os.environ.get('GIT_COMMITTER_NAME', 'github-actions[bot]'))
+        if not user_email:
+            config_writer.set_value('user', 'email', os.environ.get('GIT_COMMITTER_EMAIL', 'github-actions[bot]@users.noreply.github.com'))
+        config_writer.release()
         repo.git.commit('-m', commit_message)
         repo.git.push('origin', repo.active_branch.name)
     else:
