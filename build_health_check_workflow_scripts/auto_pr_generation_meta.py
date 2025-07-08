@@ -512,7 +512,31 @@ def main():
     ticket_number = extract_ticket_number(meta_pr.title)
  
     prs, issue_repo_name, issue_number = fetch_merge_commits(repo_owner, repo_name, int(pr_number), github_token)
-    # For each PR, get the tag from GitHub
+    # If PR is linked to an issue, check if all PRs in that issue are merged to the target branch
+    if issue_number:
+        print(f"[DEBUG] PR is linked to issue #{issue_number}. Checking all linked PRs...")
+        all_merged = True
+        g = Github(github_token)
+        for pr_info in prs:
+            repo_full = pr_info['repo']
+            sha = pr_info['sha']
+            repo_obj = g.get_repo(repo_full)
+            # Find the PR for this SHA
+            found = False
+            for pr in repo_obj.get_pulls(state='closed'):
+                if pr.merge_commit_sha and pr.merge_commit_sha.startswith(sha):
+                    # Check if merged to the correct base branch
+                    if pr.merged and pr.base.ref == base_branch:
+                        found = True
+                        break
+            if not found:
+                all_merged = False
+                print(f"[DEBUG] Not all PRs are merged to {base_branch}. Waiting...")
+                break
+        if not all_merged:
+            print(f"[DEBUG] Exiting: Not all PRs in issue #{issue_number} are merged to {base_branch}.")
+            sys.exit(0)
+    # Continue as before: aggregate all PRs for update
     print(f"[DEBUG] PRs to process: {prs}")
     updates = []
     for pr in prs:
