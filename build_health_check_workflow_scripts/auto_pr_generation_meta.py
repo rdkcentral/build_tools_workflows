@@ -207,16 +207,19 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         pkgrev_pv_field = None
         if repo_name.startswith('rdkcentral/entservices-'):
             comp = repo_name.split('/')[-1]
-            # Recursively search for entservices-*.bb under meta-rdk-video/recipes-extended/entservices/
-            entservices_dir = os.path.join(manifest_repo_path, 'recipes-extended', 'entservices')
-            if os.path.isdir(entservices_dir):
-                for root, dirs, files in os.walk(entservices_dir):
-                    for f in files:
-                        if f == f'entservices-{comp.split("entservices-")[-1]}.bb':
-                            bb_file = os.path.join(root, f)
+            # Special case for entservices-apis
+            if comp == 'entservices-apis':
+                bb_file = os.path.join(manifest_repo_path, 'recipes-extended', 'wpe-framework', 'entservices-apis.bb')
+            else:
+                entservices_dir = os.path.join(manifest_repo_path, 'recipes-extended', 'entservices')
+                if os.path.isdir(entservices_dir):
+                    for root, dirs, files in os.walk(entservices_dir):
+                        for f in files:
+                            if f == f'entservices-{comp.split("entservices-")[-1]}.bb':
+                                bb_file = os.path.join(root, f)
+                                break
+                        if bb_file:
                             break
-                    if bb_file:
-                        break
             # For support layer PR
             support_entservices_dir = os.path.join(generic_support_path, 'recipes-extended', 'entservices')
             if os.path.isdir(support_entservices_dir):
@@ -405,6 +408,7 @@ def get_tag_for_sha(github_token, repo_full_name, sha):
     """
     Return the tag name for a given repo and commit SHA, or None if not found.
     """
+    from packaging.version import Version, InvalidVersion
     g = Github(github_token)
     repo = g.get_repo(repo_full_name)
     tags = list(repo.get_tags())
@@ -413,21 +417,25 @@ def get_tag_for_sha(github_token, repo_full_name, sha):
         if tag.commit.sha.startswith(sha):
             return tag.name
     # Find all tags whose commit is a descendant of the given sha (i.e., tag contains the commit)
-    closest_tag = None
-    min_ahead_by = None
+    tags_with_commit = []
     try:
         for tag in tags:
             tag_commit = repo.get_commit(tag.commit.sha)
             comparison = repo.compare(sha, tag_commit.sha)
-            # Only consider if tag_commit is ahead (i.e., contains sha)
             if comparison.status == 'ahead':
-                # Find the tag with the smallest number of commits ahead (closest tag)
-                if min_ahead_by is None or comparison.ahead_by < min_ahead_by:
-                    min_ahead_by = comparison.ahead_by
-                    closest_tag = tag.name
+                tags_with_commit.append(tag)
     except Exception as e:
         print(f"[DEBUG] Error checking if tag contains commit: {e}")
-    return closest_tag
+    # Sort tags_with_commit by semantic version (lowest first)
+    def version_key(tag):
+        try:
+            return Version(tag.name)
+        except InvalidVersion:
+            return Version('0.0.0')
+    tags_with_commit.sort(key=version_key)
+    if tags_with_commit:
+        return tags_with_commit[0].name
+    return None
 
 def main():
     github_token = os.getenv('GITHUB_TOKEN')
