@@ -200,11 +200,14 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         sha = update['sha']
         tag = update.get('tag')
         print(f"[DEBUG] Processing update: repo={repo_name}, sha={sha}, tag={tag}")
-        # Determine .bb and pkgrev.inc paths
+        # Determine .bb paths (meta and support layer)
+        bb_file = None
+        support_bb_file = None
+        pkgrev_file = None
+        pkgrev_pv_field = None
         if repo_name.startswith('rdkcentral/entservices-'):
             comp = repo_name.split('/')[-1]
             # Recursively search for entservices-*.bb under meta-rdk-video/recipes-extended/entservices/
-            bb_file = None
             entservices_dir = os.path.join(manifest_repo_path, 'recipes-extended', 'entservices')
             if os.path.isdir(entservices_dir):
                 for root, dirs, files in os.walk(entservices_dir):
@@ -214,11 +217,7 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                             break
                     if bb_file:
                         break
-            pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
-            pkgrev_key = comp
-            pkgrev_pv_field = f'PV:pn-{comp}'
             # For support layer PR
-            support_bb_file = None
             support_entservices_dir = os.path.join(generic_support_path, 'recipes-extended', 'entservices')
             if os.path.isdir(support_entservices_dir):
                 for root, dirs, files in os.walk(support_entservices_dir):
@@ -228,12 +227,14 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                             break
                     if support_bb_file:
                         break
+            pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
+            pkgrev_pv_field = f'PV:pn-{comp}'
         elif repo_name == 'rdk-e/rdkservices-cpc':
             bb_file = os.path.join(manifest_repo_path.replace('meta-middleware-generic-support', 'meta-rdk-comast-video'), 'rdkservices-comcast.bb')
             cspc_support_path = generic_support_path.replace('meta-middleware-generic-support', 'meta-middleware-cspc-support')
+            support_bb_file = None  # Not handled for support layer in this case
             pkgrev_file = os.path.join(cspc_support_path, 'conf', 'include', 'cspc-pkgrev.inc')
-            pkgrev_key = 'rdkservices-comcast'
-            pkgrev_pv_field = f'{pkgrev_key}_PV'
+            pkgrev_pv_field = 'rdkservices-comcast_PV'
         else:
             print(f"[DEBUG] Skipping repo {repo_name} (not handled)")
             continue
@@ -282,36 +283,29 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                 print(f"[DEBUG] No change needed for {support_bb_file}")
         elif support_bb_file:
             print(f"[DEBUG] Support .bb file does not exist: {support_bb_file}")
-        # Always use a tag, fallback to '1.0.0' if tag is None
+
+        # Only update pkgrev_file in support layer repo
         tag_to_use = tag if tag else '1.0.0'
-        if pkgrev_file and os.path.exists(pkgrev_file):
+        if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
             with open(pkgrev_file, 'r') as f:
                 lines = f.readlines()
             file_changed = False
             with open(pkgrev_file, 'w') as f:
                 for line in lines:
-                    if repo_name.startswith('rdkcentral/entservices-'):
-                        if line.strip().startswith(f'{pkgrev_pv_field} ='):
-                            print(f"[DEBUG] Updating PV in {pkgrev_file} to {tag_to_use}")
-                            f.write(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
-                            file_changed = True
-                        else:
-                            f.write(line)
+                    if line.strip().startswith(f'{pkgrev_pv_field} ='):
+                        print(f"[DEBUG] Updating PV in {pkgrev_file} to {tag_to_use}")
+                        f.write(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
+                        file_changed = True
                     else:
-                        if line.strip().startswith(f'{pkgrev_pv_field} ='):
-                            print(f"[DEBUG] Updating PV in {pkgrev_file} to {tag_to_use}")
-                            f.write(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
-                            file_changed = True
-                        else:
-                            f.write(line)
+                        f.write(line)
             if file_changed:
-                repo.git.add(pkgrev_file)
-                changed = True
+                support_repo.git.add(pkgrev_file)
+                support_changed = True
                 print(f"[DEBUG] Changed {pkgrev_file}")
             else:
                 print(f"[DEBUG] No change needed for {pkgrev_file}")
-        else:
-            print(f"[DEBUG] pkgrev_file does not exist: {pkgrev_file}")
+        elif pkgrev_file:
+            print(f"[DEBUG] pkgrev_file does not exist or support_repo not found: {pkgrev_file}")
     print(f"[DEBUG] update_bb_and_pkgrev changed={changed}, support_changed={support_changed}")
     return changed, support_changed
 #Build the PR list description
