@@ -240,16 +240,21 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             continue
         print(f"[DEBUG] bb_file: {bb_file}")
         print(f"[DEBUG] pkgrev_file: {pkgrev_file}")
-        # Update .bb file SRCREV in meta layer
+        # Update .bb file SRCREV and PV in meta layer
         if bb_file and os.path.exists(bb_file):
             with open(bb_file, 'r') as f:
                 lines = f.readlines()
             file_changed = False
+            tag_to_use = tag if tag else '1.0.0'
             with open(bb_file, 'w') as f:
                 for line in lines:
                     if line.strip().startswith('SRCREV ='):
                         print(f"[DEBUG] Updating SRCREV in {bb_file} to {sha}")
                         f.write(f'SRCREV = "{sha}"\n')
+                        file_changed = True
+                    elif line.strip().startswith('PV ?='):
+                        print(f"[DEBUG] Updating PV in {bb_file} to {tag_to_use}")
+                        f.write(f'PV ?= "{tag_to_use}"\n')
                         file_changed = True
                     else:
                         f.write(line)
