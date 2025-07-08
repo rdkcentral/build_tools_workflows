@@ -180,6 +180,69 @@ def update_xml_files(manifest_repo_path, updates):
       print("No changes were made to SRCREV in the recipe file.")
 
   return changed
+def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
+    """
+    For each component, update the correct .bb file's SRCREV and the correct generic-pkgrev.inc PV field with the tag.
+    updates: list of dicts with keys: repo, sha, tag
+    """
+    repo = Repo(manifest_repo_path)
+    changed = False
+    for update in updates:
+        repo_name = update['repo']
+        sha = update['sha']
+        tag = update.get('tag')
+        # Determine .bb and pkgrev.inc paths
+        if repo_name.startswith('rdkcentral/entservices-'):
+            comp = repo_name.split('/')[-1]
+            bb_file = os.path.join(manifest_repo_path, f'entservices-{comp.split("entservices-")[-1]}.bb')
+            pkgrev_file = os.path.join(generic_support_path, 'generic-pkgrev.inc')
+            pkgrev_key = comp
+            pkgrev_pv_field = f'PV:pn-{comp}'
+        elif repo_name == 'rdk-e/rdkservices-cpc':
+            bb_file = os.path.join(manifest_repo_path.replace('meta-middleware-generic-support', 'meta-rdk-comast-video'), 'rdkservices-comcast.bb')
+            pkgrev_file = os.path.join(generic_support_path.replace('meta-middleware-generic-support', 'meta-middleware-cspc-support'), 'generic-pkgrev.inc')
+            pkgrev_key = 'rdkservices-comcast'
+            pkgrev_pv_field = f'{pkgrev_key}_PV'
+        else:
+            continue
+        # Update .bb file SRCREV
+        if os.path.exists(bb_file):
+            with open(bb_file, 'r') as f:
+                lines = f.readlines()
+            file_changed = False
+            with open(bb_file, 'w') as f:
+                for line in lines:
+                    if line.strip().startswith('SRCREV ='):
+                        f.write(f'SRCREV = "{sha}"\n')
+                        file_changed = True
+                    else:
+                        f.write(line)
+            if file_changed:
+                repo.git.add(bb_file)
+                changed = True
+        # Update generic-pkgrev.inc PV
+        if tag and os.path.exists(pkgrev_file):
+            with open(pkgrev_file, 'r') as f:
+                lines = f.readlines()
+            file_changed = False
+            with open(pkgrev_file, 'w') as f:
+                for line in lines:
+                    if repo_name.startswith('rdkcentral/entservices-'):
+                        if line.strip().startswith(f'{pkgrev_pv_field} ='):
+                            f.write(f'{pkgrev_pv_field} = "{tag}"\n')
+                            file_changed = True
+                        else:
+                            f.write(line)
+                    else:
+                        if line.strip().startswith(f'{pkgrev_pv_field} ='):
+                            f.write(f'{pkgrev_pv_field} = "{tag}"\n')
+                            file_changed = True
+                        else:
+                            f.write(line)
+            if file_changed:
+                repo.git.add(pkgrev_file)
+                changed = True
+    return changed
 #Build the PR list description
 def build_pr_list_description(prs):
 
@@ -206,6 +269,7 @@ def create_pull_request(github_token, repo_name, head_branch, base_branch, title
     ensure_label_exists(repo, 'bhc-auto-merge', color='008672')
 
     try:
+        # Only create the PR, do NOT merge it. Manual review/merge is required.
         pr = repo.create_pull(title=title, body=description, base=base_branch, head=head_branch)
         print("PR Created:", pr.html_url)
         return pr
@@ -251,9 +315,22 @@ def create_or_checkout_branch(repo, branch_name, base_branch):
         print("Error checking out branch: {}".format(str(e)))
         sys.exit(1)
 
+def get_tag_for_sha(github_token, repo_full_name, sha):
+    """
+    Return the tag name for a given repo and commit SHA, or None if not found.
+    """
+    g = Github(github_token)
+    repo = g.get_repo(repo_full_name)
+    tags = repo.get_tags()
+    for tag in tags:
+        if tag.commit.sha.startswith(sha):
+            return tag.name
+    return None
+
 def main():
     github_token = os.getenv('GITHUB_TOKEN')
     manifest_repo_path = os.getenv('META_REPO_PATH')
+    generic_support_path = os.getenv('GENERIC_SUPPORT_PATH')  # new env var for meta-middleware-generic-support
     pr_number = os.getenv('PR_NUMBER')
     manifest_repo_name = os.getenv('META_REPO_NAME')
     repo_name = os.getenv('GITHUB_REPOSITORY')
@@ -268,32 +345,28 @@ def main():
     ticket_number = extract_ticket_number(meta_pr.title)
  
     prs, issue_repo_name, issue_number = fetch_merge_commits(repo_owner, repo_name, int(pr_number), github_token)
-    
-    if issue_number:
-        feature_branch = "feature_{}_issue_{}".format(issue_repo_name, issue_number)
-        pr_title = "Auto PR for {} {}".format(issue_repo_name, issue_number)
-    else:
-        feature_branch = "feature_{}_pr_{}".format(repo_name.split('/')[-1], pr_number)
-        pr_title = "Auto PR for {} {}".format(repo_name, pr_number)
-
-    # Create or check out the branch in the local manifest repository
-    repo = Repo(manifest_repo_path)
-    create_or_checkout_branch(repo, feature_branch, base_branch)
-    time.sleep(5)
-
-    # Set the new PR title and description
-    manifest_pr_title = "{} - {}".format(ticket_number, pr_title)
-    pr_list = build_pr_list_description(prs)
-    manifest_pr_description = "Details: {}\n{}".format(meta_pr.body, pr_list)
-
-    updates = {pr['repo'].split('/')[-1]: pr['sha'] for pr in prs}
+    # For each PR, get the tag from GitHub
+    updates = []
+    for pr in prs:
+        tag = get_tag_for_sha(github_token, pr['repo'], pr['sha'])
+        updates.append({'repo': pr['repo'], 'sha': pr['sha'], 'tag': tag})
 
     print("Updates to be pushed to feature branch: {}".format(updates))
-    
-    changes_made = update_xml_files(manifest_repo_path, updates)
-    if changes_made:  
-      commit_and_push(manifest_repo_path, "Update manifest for {}".format(','.join(updates.keys())))
-      create_pull_request(github_token, manifest_repo_name, feature_branch, base_branch, manifest_pr_title, manifest_pr_description)
 
+    changes_made = update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates)
+    if changes_made:
+        commit_and_push(
+            manifest_repo_path,
+            "Update manifest and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
+        )
+        create_pull_request(
+            github_token,
+            manifest_repo_name,
+            feature_branch,
+            base_branch,
+            manifest_pr_title,
+            manifest_pr_description
+        )
+# ...existing code...
 if __name__ == '__main__':
     main()
