@@ -307,7 +307,7 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         elif pkgrev_file:
             print(f"[DEBUG] pkgrev_file does not exist or support_repo not found: {pkgrev_file}")
     print(f"[DEBUG] update_bb_and_pkgrev changed={changed}, support_changed={support_changed}")
-    return changed, support_changed
+    return changed, support_changed, support_repo
 #Build the PR list description
 def build_pr_list_description(prs):
 
@@ -453,7 +453,7 @@ def main():
     # Switch to feature branch BEFORE making changes
     create_or_checkout_branch(Repo(manifest_repo_path), feature_branch, base_branch)
 
-    changes_made, support_changed = update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates)
+    changes_made, support_changed, support_repo = update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates)
     print(f"[DEBUG] changes_made: {changes_made}, support_changed: {support_changed}")
     if changes_made:
         commit_and_push(
@@ -479,7 +479,7 @@ def main():
         if support_repo:
             create_or_checkout_branch(support_repo, support_branch, base_branch)
             commit_and_push(
-                support_repo_path,
+                generic_support_path,
                 "Update support layer entservices SRCREV for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag'] if u['tag'] else '1.0.0'}" for u in updates]))
             )
             create_pull_request(
