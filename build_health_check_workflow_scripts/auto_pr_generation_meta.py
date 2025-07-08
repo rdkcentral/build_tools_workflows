@@ -253,11 +253,23 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             tag_to_use = tag
             with open(bb_file, 'w') as f:
                 for line in lines:
-                    if line.strip().startswith('SRCREV ='):
+                    line_stripped = line.strip()
+                    # Match SRCREV, SRCREV ?=, or SRCREV_<component> =
+                    if (
+                        line_stripped.startswith('SRCREV =') or
+                        line_stripped.startswith('SRCREV ?=') or
+                        (line_stripped.startswith(f'SRCREV_{comp.upper()} =') if comp else False)
+                    ):
                         print(f"[DEBUG] Updating SRCREV in {bb_file} to {sha}")
-                        f.write(f'SRCREV = "{sha}"\n')
+                        # Preserve the assignment type (e.g., =, ?=)
+                        if 'SRCREV ?=' in line_stripped:
+                            f.write(f'SRCREV ?= "{sha}"\n')
+                        elif f'SRCREV_{comp.upper()} =' in line_stripped:
+                            f.write(f'SRCREV_{comp.upper()} = "{sha}"\n')
+                        else:
+                            f.write(f'SRCREV = "{sha}"\n')
                         file_changed = True
-                    elif line.strip().startswith('PV ?='):
+                    elif line_stripped.startswith('PV ?='):
                         print(f"[DEBUG] Updating PV in {bb_file} to {tag_to_use}")
                         f.write(f'PV ?= "{tag_to_use}"\n')
                         file_changed = True
