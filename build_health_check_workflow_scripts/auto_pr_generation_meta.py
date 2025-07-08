@@ -195,7 +195,17 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         # Determine .bb and pkgrev.inc paths
         if repo_name.startswith('rdkcentral/entservices-'):
             comp = repo_name.split('/')[-1]
-            bb_file = os.path.join(manifest_repo_path, f'entservices-{comp.split("entservices-")[-1]}.bb')
+            # Recursively search for entservices-*.bb under meta-rdk-video/recipes-extended/entservices/
+            bb_file = None
+            entservices_dir = os.path.join(manifest_repo_path, 'recipes-extended', 'entservices')
+            if os.path.isdir(entservices_dir):
+                for root, dirs, files in os.walk(entservices_dir):
+                    for f in files:
+                        if f == f'entservices-{comp.split("entservices-")[-1]}.bb':
+                            bb_file = os.path.join(root, f)
+                            break
+                    if bb_file:
+                        break
             pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
             pkgrev_key = comp
             pkgrev_pv_field = f'PV:pn-{comp}'
@@ -211,7 +221,7 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         print(f"[DEBUG] bb_file: {bb_file}")
         print(f"[DEBUG] pkgrev_file: {pkgrev_file}")
         # Update .bb file SRCREV
-        if os.path.exists(bb_file):
+        if bb_file and os.path.exists(bb_file):
             with open(bb_file, 'r') as f:
                 lines = f.readlines()
             file_changed = False
@@ -231,8 +241,9 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                 print(f"[DEBUG] No change needed for {bb_file}")
         else:
             print(f"[DEBUG] .bb file does not exist: {bb_file}")
-        # Update generic-pkgrev.inc PV
-        if tag and os.path.exists(pkgrev_file):
+        # Always use a tag, fallback to '1.0.0' if tag is None
+        tag_to_use = tag if tag else '1.0.0'
+        if pkgrev_file and os.path.exists(pkgrev_file):
             with open(pkgrev_file, 'r') as f:
                 lines = f.readlines()
             file_changed = False
@@ -240,15 +251,15 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                 for line in lines:
                     if repo_name.startswith('rdkcentral/entservices-'):
                         if line.strip().startswith(f'{pkgrev_pv_field} ='):
-                            print(f"[DEBUG] Updating PV in {pkgrev_file} to {tag}")
-                            f.write(f'{pkgrev_pv_field} = "{tag}"\n')
+                            print(f"[DEBUG] Updating PV in {pkgrev_file} to {tag_to_use}")
+                            f.write(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
                             file_changed = True
                         else:
                             f.write(line)
                     else:
                         if line.strip().startswith(f'{pkgrev_pv_field} ='):
-                            print(f"[DEBUG] Updating PV in {pkgrev_file} to {tag}")
-                            f.write(f'{pkgrev_pv_field} = "{tag}"\n')
+                            print(f"[DEBUG] Updating PV in {pkgrev_file} to {tag_to_use}")
+                            f.write(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
                             file_changed = True
                         else:
                             f.write(line)
@@ -258,10 +269,8 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                 print(f"[DEBUG] Changed {pkgrev_file}")
             else:
                 print(f"[DEBUG] No change needed for {pkgrev_file}")
-        elif tag:
-            print(f"[DEBUG] pkgrev_file does not exist: {pkgrev_file}")
         else:
-            print(f"[DEBUG] No tag found for {repo_name}, skipping PV update.")
+            print(f"[DEBUG] pkgrev_file does not exist: {pkgrev_file}")
     print(f"[DEBUG] update_bb_and_pkgrev changed={changed}")
     return changed
 #Build the PR list description
