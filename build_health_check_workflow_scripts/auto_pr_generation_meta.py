@@ -408,18 +408,22 @@ def get_tag_for_sha(github_token, repo_full_name, sha):
     for tag in tags:
         if tag.commit.sha.startswith(sha):
             return tag.name
-    # If not found, check if the tag contains the commit (i.e., the tag's commit is a descendant of sha)
+    # Find all tags whose commit is a descendant of the given sha (i.e., tag contains the commit)
+    closest_tag = None
+    min_ahead_by = None
     try:
         for tag in tags:
             tag_commit = repo.get_commit(tag.commit.sha)
-            # Use the compare API: if sha is an ancestor of tag_commit, it will be in the 'commits' list
             comparison = repo.compare(sha, tag_commit.sha)
-            for c in comparison.commits:
-                if c.sha.startswith(sha):
-                    return tag.name
+            # Only consider if tag_commit is ahead (i.e., contains sha)
+            if comparison.status == 'ahead':
+                # Find the tag with the smallest number of commits ahead (closest tag)
+                if min_ahead_by is None or comparison.ahead_by < min_ahead_by:
+                    min_ahead_by = comparison.ahead_by
+                    closest_tag = tag.name
     except Exception as e:
         print(f"[DEBUG] Error checking if tag contains commit: {e}")
-    return None
+    return closest_tag
 
 def main():
     github_token = os.getenv('GITHUB_TOKEN')
