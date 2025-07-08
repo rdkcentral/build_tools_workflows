@@ -408,25 +408,17 @@ def get_tag_for_sha(github_token, repo_full_name, sha):
     for tag in tags:
         if tag.commit.sha.startswith(sha):
             return tag.name
-    # If not found, walk back up to 10 parent commits from the merge commit
+    # If not found, check if the tag contains the commit (i.e., the tag's commit is a descendant of sha)
     try:
-        commit = repo.get_commit(sha)
-        visited = set()
-        queue = [(commit, 0)]
-        max_depth = 10
-        while queue:
-            current_commit, depth = queue.pop(0)
-            if current_commit.sha in visited or depth > max_depth:
-                continue
-            visited.add(current_commit.sha)
-            for tag in tags:
-                if tag.commit.sha == current_commit.sha:
+        for tag in tags:
+            tag_commit = repo.get_commit(tag.commit.sha)
+            # Use the compare API: if sha is an ancestor of tag_commit, it will be in the 'commits' list
+            comparison = repo.compare(sha, tag_commit.sha)
+            for c in comparison.commits:
+                if c.sha.startswith(sha):
                     return tag.name
-            # Add parents to queue
-            for parent in current_commit.parents:
-                queue.append((parent, depth + 1))
     except Exception as e:
-        print(f"[DEBUG] Error walking parent commits for tag lookup: {e}")
+        print(f"[DEBUG] Error checking if tag contains commit: {e}")
     return None
 
 def main():
