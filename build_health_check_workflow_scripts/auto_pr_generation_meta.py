@@ -195,12 +195,13 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         if repo_name.startswith('rdkcentral/entservices-'):
             comp = repo_name.split('/')[-1]
             bb_file = os.path.join(manifest_repo_path, f'entservices-{comp.split("entservices-")[-1]}.bb')
-            pkgrev_file = os.path.join(generic_support_path, 'generic-pkgrev.inc')
+            pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
             pkgrev_key = comp
             pkgrev_pv_field = f'PV:pn-{comp}'
         elif repo_name == 'rdk-e/rdkservices-cpc':
             bb_file = os.path.join(manifest_repo_path.replace('meta-middleware-generic-support', 'meta-rdk-comast-video'), 'rdkservices-comcast.bb')
-            pkgrev_file = os.path.join(generic_support_path.replace('meta-middleware-generic-support', 'meta-middleware-cspc-support'), 'generic-pkgrev.inc')
+            cspc_support_path = generic_support_path.replace('meta-middleware-generic-support', 'meta-middleware-cspc-support')
+            pkgrev_file = os.path.join(cspc_support_path, 'conf', 'include', 'cspc-pkgrev.inc')
             pkgrev_key = 'rdkservices-comcast'
             pkgrev_pv_field = f'{pkgrev_key}_PV'
         else:
@@ -336,6 +337,32 @@ def main():
     repo_name = os.getenv('GITHUB_REPOSITORY')
     repo_owner = os.getenv('GITHUB_ORG')
     base_branch = os.getenv('BASE_BRANCH')
+
+    # Check required environment variables
+    if not generic_support_path:
+        print("ERROR: GENERIC_SUPPORT_PATH environment variable is not set.")
+        sys.exit(1)
+    if not manifest_repo_path:
+        print("ERROR: META_REPO_PATH environment variable is not set.")
+        sys.exit(1)
+    if not github_token:
+        print("ERROR: GITHUB_TOKEN environment variable is not set.")
+        sys.exit(1)
+    if not pr_number:
+        print("ERROR: PR_NUMBER environment variable is not set.")
+        sys.exit(1)
+    if not manifest_repo_name:
+        print("ERROR: META_REPO_NAME environment variable is not set.")
+        sys.exit(1)
+    if not repo_name:
+        print("ERROR: GITHUB_REPOSITORY environment variable is not set.")
+        sys.exit(1)
+    if not repo_owner:
+        print("ERROR: GITHUB_ORG environment variable is not set.")
+        sys.exit(1)
+    if not base_branch:
+        print("ERROR: BASE_BRANCH environment variable is not set.")
+        sys.exit(1)
 
     g = Github(github_token)
     repo = g.get_repo(repo_name)
