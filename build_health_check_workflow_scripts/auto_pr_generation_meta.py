@@ -186,7 +186,15 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
     updates: list of dicts with keys: repo, sha, tag
     """
     repo = Repo(manifest_repo_path)
+    support_repo = None
+    support_repo_path = generic_support_path
+    if os.path.isdir(support_repo_path):
+        try:
+            support_repo = Repo(support_repo_path)
+        except Exception as e:
+            print(f"[DEBUG] Could not open support repo at {support_repo_path}: {e}")
     changed = False
+    support_changed = False
     for update in updates:
         repo_name = update['repo']
         sha = update['sha']
@@ -209,6 +217,17 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
             pkgrev_key = comp
             pkgrev_pv_field = f'PV:pn-{comp}'
+            # For support layer PR
+            support_bb_file = None
+            support_entservices_dir = os.path.join(generic_support_path, 'recipes-extended', 'entservices')
+            if os.path.isdir(support_entservices_dir):
+                for root, dirs, files in os.walk(support_entservices_dir):
+                    for f in files:
+                        if f == f'entservices-{comp.split("entservices-")[-1]}.bb':
+                            support_bb_file = os.path.join(root, f)
+                            break
+                    if support_bb_file:
+                        break
         elif repo_name == 'rdk-e/rdkservices-cpc':
             bb_file = os.path.join(manifest_repo_path.replace('meta-middleware-generic-support', 'meta-rdk-comast-video'), 'rdkservices-comcast.bb')
             cspc_support_path = generic_support_path.replace('meta-middleware-generic-support', 'meta-middleware-cspc-support')
@@ -220,7 +239,7 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             continue
         print(f"[DEBUG] bb_file: {bb_file}")
         print(f"[DEBUG] pkgrev_file: {pkgrev_file}")
-        # Update .bb file SRCREV
+        # Update .bb file SRCREV in meta layer
         if bb_file and os.path.exists(bb_file):
             with open(bb_file, 'r') as f:
                 lines = f.readlines()
@@ -241,6 +260,28 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                 print(f"[DEBUG] No change needed for {bb_file}")
         else:
             print(f"[DEBUG] .bb file does not exist: {bb_file}")
+
+        # Update .bb file SRCREV in support layer (if present)
+        if support_repo and support_bb_file and os.path.exists(support_bb_file):
+            with open(support_bb_file, 'r') as f:
+                lines = f.readlines()
+            file_changed = False
+            with open(support_bb_file, 'w') as f:
+                for line in lines:
+                    if line.strip().startswith('SRCREV ='):
+                        print(f"[DEBUG] Updating SRCREV in {support_bb_file} to {sha}")
+                        f.write(f'SRCREV = "{sha}"\n')
+                        file_changed = True
+                    else:
+                        f.write(line)
+            if file_changed:
+                support_repo.git.add(support_bb_file)
+                support_changed = True
+                print(f"[DEBUG] Changed {support_bb_file}")
+            else:
+                print(f"[DEBUG] No change needed for {support_bb_file}")
+        elif support_bb_file:
+            print(f"[DEBUG] Support .bb file does not exist: {support_bb_file}")
         # Always use a tag, fallback to '1.0.0' if tag is None
         tag_to_use = tag if tag else '1.0.0'
         if pkgrev_file and os.path.exists(pkgrev_file):
@@ -271,8 +312,8 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                 print(f"[DEBUG] No change needed for {pkgrev_file}")
         else:
             print(f"[DEBUG] pkgrev_file does not exist: {pkgrev_file}")
-    print(f"[DEBUG] update_bb_and_pkgrev changed={changed}")
-    return changed
+    print(f"[DEBUG] update_bb_and_pkgrev changed={changed}, support_changed={support_changed}")
+    return changed, support_changed
 #Build the PR list description
 def build_pr_list_description(prs):
 
@@ -418,8 +459,8 @@ def main():
     # Switch to feature branch BEFORE making changes
     create_or_checkout_branch(Repo(manifest_repo_path), feature_branch, base_branch)
 
-    changes_made = update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates)
-    print(f"[DEBUG] changes_made: {changes_made}")
+    changes_made, support_changed = update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates)
+    print(f"[DEBUG] changes_made: {changes_made}, support_changed: {support_changed}")
     if changes_made:
         commit_and_push(
             manifest_repo_path,
@@ -434,7 +475,29 @@ def main():
             manifest_pr_description
         )
     else:
-        print("[DEBUG] No changes detected, PR will not be created.")
+        print("[DEBUG] No changes detected, PR will not be created for meta layer.")
+
+    # Support layer PR
+    if support_changed:
+        support_branch = f"auto-update-support-{ticket_number.lower()}"
+        support_pr_title = f"[Auto] Update support layer for {ticket_number}"
+        support_pr_description = build_pr_list_description(updates)
+        if support_repo:
+            create_or_checkout_branch(support_repo, support_branch, base_branch)
+            commit_and_push(
+                support_repo_path,
+                "Update support layer entservices SRCREV for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag'] if u['tag'] else '1.0.0'}" for u in updates]))
+            )
+            create_pull_request(
+                github_token,
+                'rdkcentral/meta-middleware-generic-support',
+                support_branch,
+                base_branch,
+                support_pr_title,
+                support_pr_description
+            )
+        else:
+            print("[DEBUG] No support_repo found for PR creation.")
 # ...existing code...
 if __name__ == '__main__':
     main()
