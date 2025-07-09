@@ -401,9 +401,19 @@ def create_or_checkout_branch(repo, branch_name, base_branch):
 
         # Check if the branch exists in the remote repository
         existing_branches = repo.git.branch('-r')
-        if 'origin/{}'.format(branch_name) in existing_branches:
-            print("Branch {} already exists remotely. Stopping further processing.".format(branch_name))
-            sys.exit(1)  # Exit with a non-zero code to signal that the branch already exists
+        if f'origin/{branch_name}' in existing_branches:
+            print(f"Branch {branch_name} already exists remotely. Checking out and updating it.")
+            # If we are not already on the branch, check it out
+            current_branch = repo.active_branch.name
+            if current_branch != branch_name:
+                # If branch does not exist locally, create tracking branch
+                local_branches = [b.name for b in repo.branches]
+                if branch_name not in local_branches:
+                    repo.git.checkout('-b', branch_name, f'origin/{branch_name}')
+                else:
+                    repo.git.checkout(branch_name)
+            # Pull latest changes from remote
+            repo.git.pull('origin', branch_name)
         else:
             # Switch to 'base_branch' and pull the latest changes to ensure local repo is up-to-date
             repo.git.checkout(base_branch)
@@ -411,13 +421,13 @@ def create_or_checkout_branch(repo, branch_name, base_branch):
 
             # Create and check out the new branch locally
             repo.git.checkout('-b', branch_name)
-            print("Created and checked out new branch: {}".format(branch_name))
+            print(f"Created and checked out new branch: {branch_name}")
 
             # Push the newly created branch to the remote
             repo.git.push('origin', branch_name)
 
     except GitCommandError as e:
-        print("Error checking out branch: {}".format(str(e)))
+        print(f"Error checking out branch: {str(e)}")
         sys.exit(1)
 
 def get_tag_for_sha(github_token, repo_full_name, sha):
