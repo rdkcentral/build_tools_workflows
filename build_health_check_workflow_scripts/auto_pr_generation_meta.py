@@ -207,37 +207,47 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         pkgrev_pv_field = None
         if repo_name.startswith('rdkcentral/entservices-'):
             comp = repo_name.split('/')[-1]
+            print(f"[DBG] Component: {comp}")
             # Special case for entservices-apis
             if comp == 'entservices-apis':
                 bb_file = os.path.join(manifest_repo_path, 'recipes-extended', 'wpe-framework', 'entservices-apis.bb')
+                print(f"[DBG] entservices-apis special case, bb_file: {bb_file}")
             else:
                 entservices_dir = os.path.join(manifest_repo_path, 'recipes-extended', 'entservices')
+                print(f"[DBG] Searching for .bb in {entservices_dir}")
                 if os.path.isdir(entservices_dir):
                     for root, dirs, files in os.walk(entservices_dir):
                         for f in files:
+                            print(f"[DBG] Checking file: {f}")
                             if f == f'entservices-{comp.split("entservices-")[-1]}.bb':
                                 bb_file = os.path.join(root, f)
+                                print(f"[DBG] Found bb_file: {bb_file}")
                                 break
                         if bb_file:
                             break
             # For support layer PR
             support_entservices_dir = os.path.join(generic_support_path, 'recipes-extended', 'entservices')
+            print(f"[DBG] Searching for support .bb in {support_entservices_dir}")
             if os.path.isdir(support_entservices_dir):
                 for root, dirs, files in os.walk(support_entservices_dir):
                     for f in files:
+                        print(f"[DBG] Support layer: checking file: {f}")
                         if f == f'entservices-{comp.split("entservices-")[-1]}.bb':
                             support_bb_file = os.path.join(root, f)
+                            print(f"[DBG] Found support_bb_file: {support_bb_file}")
                             break
                     if support_bb_file:
                         break
             pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
             pkgrev_pv_field = f'PV:pn-{comp}'
+            print(f"[DBG] pkgrev_file: {pkgrev_file}, pkgrev_pv_field: {pkgrev_pv_field}")
         elif repo_name == 'rdk-e/rdkservices-cpc':
             bb_file = os.path.join(manifest_repo_path.replace('meta-middleware-generic-support', 'meta-rdk-comast-video'), 'rdkservices-comcast.bb')
             cspc_support_path = generic_support_path.replace('meta-middleware-generic-support', 'meta-middleware-cspc-support')
             support_bb_file = None  # Not handled for support layer in this case
             pkgrev_file = os.path.join(cspc_support_path, 'conf', 'include', 'cspc-pkgrev.inc')
             pkgrev_pv_field = 'rdkservices-comcast_PV'
+            print(f"[DBG] cspc case, bb_file: {bb_file}, pkgrev_file: {pkgrev_file}, pkgrev_pv_field: {pkgrev_pv_field}")
         else:
             print(f"[DEBUG] Skipping repo {repo_name} (not handled)")
             continue
@@ -245,6 +255,7 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         print(f"[DEBUG] pkgrev_file: {pkgrev_file}")
         # Update .bb file SRCREV and PV in meta layer
         if bb_file and os.path.exists(bb_file):
+            print(f"[DBG] Opening bb_file: {bb_file}")
             with open(bb_file, 'r') as f:
                 lines = f.readlines()
             file_changed = False
@@ -254,8 +265,9 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             else:
                 tag_to_use = tag
             with open(bb_file, 'w') as f:
-                for line in lines:
+                for idx, line in enumerate(lines):
                     line_stripped = line.strip()
+                    print(f"[DBG] bb_file line {idx}: {line_stripped}")
                     # Match SRCREV, SRCREV ?=, or SRCREV_<component> = (component always lower case)
                     if (
                         line_stripped.startswith('SRCREV =') or
@@ -288,11 +300,13 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
 
         # Update .bb file SRCREV in support layer (if present)
         if support_repo and support_bb_file and os.path.exists(support_bb_file):
+            print(f"[DBG] Opening support_bb_file: {support_bb_file}")
             with open(support_bb_file, 'r') as f:
                 lines = f.readlines()
             file_changed = False
             with open(support_bb_file, 'w') as f:
-                for line in lines:
+                for idx, line in enumerate(lines):
+                    print(f"[DBG] support_bb_file line {idx}: {line.strip()}")
                     if line.strip().startswith('SRCREV ='):
                         print(f"[DEBUG] Updating SRCREV in {support_bb_file} to {sha}")
                         f.write(f'SRCREV = "{sha}"\n')
@@ -315,17 +329,26 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         else:
             tag_to_use = tag
         if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
+            print(f"[DBG] Opening pkgrev_file: {pkgrev_file}")
             with open(pkgrev_file, 'r') as f:
                 lines = f.readlines()
             file_changed = False
+            found_pv = False
             with open(pkgrev_file, 'w') as f:
-                for line in lines:
+                for idx, line in enumerate(lines):
+                    print(f"[DBG] pkgrev_file line {idx}: {line.strip()}")
                     if line.strip().startswith(f'{pkgrev_pv_field} ='):
-                        print(f"[DEBUG] Updating PV in {pkgrev_file} to {tag_to_use}")
+                        print(f"[DEBUG] Updating PV in {pkgrev_file} to {tag_to_use} (line {idx})")
                         f.write(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
                         file_changed = True
+                        found_pv = True
                     else:
                         f.write(line)
+            if not found_pv:
+                print(f"[DEBUG] PV field {pkgrev_pv_field} not found in {pkgrev_file}, appending new line.")
+                with open(pkgrev_file, 'a') as f_append:
+                    f_append.write(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
+                file_changed = True
             if file_changed:
                 support_repo.git.add(pkgrev_file)
                 support_changed = True
