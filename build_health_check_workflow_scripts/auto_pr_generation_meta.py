@@ -543,7 +543,8 @@ def main():
         tag = get_tag_for_sha(github_token, pr['repo'], pr['sha'])
         print(f"[DEBUG] Tag for {pr['repo']} at {pr['sha']}: {tag}")
         if not tag:
-            raise RuntimeError(f"No tag found that contains commit {pr['sha']} for repo {pr['repo']}")
+            print(f"[WARNING] No tag found that contains commit {pr['sha']} for repo {pr['repo']}. Setting tag as None.")
+            tag = None
         updates.append({'repo': pr['repo'], 'sha': pr['sha'], 'tag': tag})
 
     print("Updates to be pushed to feature branch: {}".format(updates))
