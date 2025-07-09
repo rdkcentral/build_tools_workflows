@@ -256,40 +256,51 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         # Update .bb file SRCREV and PV in meta layer
         if bb_file and os.path.exists(bb_file):
             print(f"[DBG] Opening bb_file: {bb_file}")
-            with open(bb_file, 'r') as f:
-                lines = f.readlines()
+            with open(bb_file, 'r', newline='') as f:
+                old_lines = f.readlines()
             file_changed = False
             if not tag:
                 print(f"[WARNING] No tag found that contains commit {sha} for repo {repo_name}. Setting tag as None.")
                 tag_to_use = None
             else:
                 tag_to_use = tag
-            with open(bb_file, 'w') as f:
-                for idx, line in enumerate(lines):
-                    line_stripped = line.strip()
-                    print(f"[DBG] bb_file line {idx}: {line_stripped}")
-                    # Match SRCREV, SRCREV ?=, or SRCREV_<component> = (component always lower case)
-                    if (
-                        line_stripped.startswith('SRCREV =') or
-                        line_stripped.startswith('SRCREV ?=') or
-                        (line_stripped.startswith(f'SRCREV_{comp} =') if comp else False)
-                    ):
-                        print(f"[DEBUG] Updating SRCREV in {bb_file} to {sha}")
-                        # Preserve the assignment type (e.g., =, ?=)
-                        if 'SRCREV ?=' in line_stripped:
-                            f.write(f'SRCREV ?= "{sha}"\n')
-                        elif f'SRCREV_{comp} =' in line_stripped:
-                            f.write(f'SRCREV_{comp} = "{sha}"\n')
-                        else:
-                            f.write(f'SRCREV = "{sha}"\n')
-                        file_changed = True
-                    elif line_stripped.startswith('PV ?='):
-                        print(f"[DEBUG] Updating PV in {bb_file} to {tag_to_use}")
-                        f.write(f'PV ?= "{tag_to_use}"\n')
-                        file_changed = True
+            new_lines = []
+            for idx, line in enumerate(old_lines):
+                line_stripped = line.strip()
+                print(f"[DBG] bb_file line {idx}: {line_stripped}")
+                # Match SRCREV, SRCREV ?=, or SRCREV_<component> = (component always lower case)
+                if (
+                    line_stripped.startswith('SRCREV =') or
+                    line_stripped.startswith('SRCREV ?=') or
+                    (line_stripped.startswith(f'SRCREV_{comp} =') if comp else False)
+                ):
+                    print(f"[DEBUG] Updating SRCREV in {bb_file} to {sha}")
+                    # Preserve the assignment type (e.g., =, ?=)
+                    if 'SRCREV ?=' in line_stripped:
+                        new_lines.append(f'SRCREV ?= "{sha}"\n')
+                    elif f'SRCREV_{comp} =' in line_stripped:
+                        new_lines.append(f'SRCREV_{comp} = "{sha}"\n')
                     else:
-                        f.write(line)
-            if file_changed:
+                        new_lines.append(f'SRCREV = "{sha}"\n')
+                    file_changed = True
+                elif line_stripped.startswith('PV ?='):
+                    print(f"[DEBUG] Updating PV in {bb_file} to {tag_to_use}")
+                    new_lines.append(f'PV ?= "{tag_to_use}"\n')
+                    file_changed = True
+                else:
+                    new_lines.append(line)
+            # Print diff for debugging
+            if old_lines != new_lines:
+                print("[DEBUG] Diff for bb_file:")
+                for i, (old, new) in enumerate(zip(old_lines, new_lines)):
+                    if old != new:
+                        print(f"- {old.rstrip()}\n+ {new.rstrip()}")
+            else:
+                print("[DEBUG] No content change in bb_file.")
+            # Write only if changed
+            if old_lines != new_lines:
+                with open(bb_file, 'w', newline='\n') as f:
+                    f.writelines(new_lines)
                 repo.git.add(bb_file)
                 changed = True
                 print(f"[DEBUG] Changed {bb_file}")
@@ -301,19 +312,29 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         # Update .bb file SRCREV in support layer (if present)
         if support_repo and support_bb_file and os.path.exists(support_bb_file):
             print(f"[DBG] Opening support_bb_file: {support_bb_file}")
-            with open(support_bb_file, 'r') as f:
-                lines = f.readlines()
+            with open(support_bb_file, 'r', newline='') as f:
+                old_lines = f.readlines()
             file_changed = False
-            with open(support_bb_file, 'w') as f:
-                for idx, line in enumerate(lines):
-                    print(f"[DBG] support_bb_file line {idx}: {line.strip()}")
-                    if line.strip().startswith('SRCREV ='):
-                        print(f"[DEBUG] Updating SRCREV in {support_bb_file} to {sha}")
-                        f.write(f'SRCREV = "{sha}"\n')
-                        file_changed = True
-                    else:
-                        f.write(line)
-            if file_changed:
+            new_lines = []
+            for idx, line in enumerate(old_lines):
+                print(f"[DBG] support_bb_file line {idx}: {line.strip()}")
+                if line.strip().startswith('SRCREV ='):
+                    print(f"[DEBUG] Updating SRCREV in {support_bb_file} to {sha}")
+                    new_lines.append(f'SRCREV = "{sha}"\n')
+                    file_changed = True
+                else:
+                    new_lines.append(line)
+            # Print diff for debugging
+            if old_lines != new_lines:
+                print("[DEBUG] Diff for support_bb_file:")
+                for i, (old, new) in enumerate(zip(old_lines, new_lines)):
+                    if old != new:
+                        print(f"- {old.rstrip()}\n+ {new.rstrip()}")
+            else:
+                print("[DEBUG] No content change in support_bb_file.")
+            if old_lines != new_lines:
+                with open(support_bb_file, 'w', newline='\n') as f:
+                    f.writelines(new_lines)
                 support_repo.git.add(support_bb_file)
                 support_changed = True
                 print(f"[DEBUG] Changed {support_bb_file}")
@@ -334,29 +355,38 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             tag_to_use = tag
         if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
             print(f"[DBG] Opening pkgrev_file: {pkgrev_file}")
-            with open(pkgrev_file, 'r') as f:
-                lines = f.readlines()
+            with open(pkgrev_file, 'r', newline='') as f:
+                old_lines = f.readlines()
             file_changed = False
             found_pv = False
-            with open(pkgrev_file, 'w') as f:
-                for idx, line in enumerate(lines):
-                    print(f"[DBG] pkgrev_file line {idx}: {line.strip()}")
-                    if line.strip().startswith(f'{pkgrev_pv_field} ='):
-                        print(f"[DEBUG] Updating PV in {pkgrev_file} to {tag_to_use} (line {idx})")
-                        f.write(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
-                        file_changed = True
-                        found_pv = True
-                    else:
-                        f.write(line)
+            new_lines = []
+            for idx, line in enumerate(old_lines):
+                print(f"[DBG] pkgrev_file line {idx}: {line.strip()}")
+                if line.strip().startswith(f'{pkgrev_pv_field} ='):
+                    print(f"[DEBUG] Updating PV in {pkgrev_file} to {tag_to_use} (line {idx})")
+                    new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
+                    file_changed = True
+                    found_pv = True
+                else:
+                    new_lines.append(line)
             if not found_pv:
                 print(f"[DEBUG] PV field {pkgrev_pv_field} not found in {pkgrev_file}, appending new line.")
-                with open(pkgrev_file, 'a') as f_append:
-                    f_append.write(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
+                new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
                 file_changed = True
-            print(f"[DEBUG] After write: file_changed={file_changed}, found_pv={found_pv}")
-            with open(pkgrev_file, 'r') as f_check:
-                print(f"[DEBUG] pkgrev_file content after update:\n" + f_check.read())
-            if file_changed:
+            # Print diff for debugging
+            if old_lines != new_lines:
+                print("[DEBUG] Diff for pkgrev_file:")
+                for i, (old, new) in enumerate(zip(old_lines, new_lines)):
+                    if old != new:
+                        print(f"- {old.rstrip()}\n+ {new.rstrip()}")
+                if len(new_lines) > len(old_lines):
+                    for i in range(len(old_lines), len(new_lines)):
+                        print(f"+ {new_lines[i].rstrip()}")
+            else:
+                print("[DEBUG] No content change in pkgrev_file.")
+            if old_lines != new_lines:
+                with open(pkgrev_file, 'w', newline='\n') as f:
+                    f.writelines(new_lines)
                 support_repo.git.add(pkgrev_file)
                 support_changed = True
                 print(f"[DEBUG] Changed {pkgrev_file}")
@@ -407,6 +437,11 @@ def create_pull_request(github_token, repo_name, head_branch, base_branch, title
     g = Github(github_token)
     repo = g.get_repo(repo_name)
 
+    # Check if a PR already exists for this branch
+    pulls = repo.get_pulls(state='open', head=f"{repo.owner.login}:{head_branch}")
+    for pr in pulls:
+        print(f"[DEBUG] Existing PR found for branch {head_branch}: {pr.html_url}")
+        return pr
     try:
         # Only create the PR, do NOT merge it. Manual review/merge is required.
         pr = repo.create_pull(title=title, body=description, base=base_branch, head=head_branch)
