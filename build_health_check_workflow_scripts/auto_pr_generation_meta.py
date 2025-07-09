@@ -379,6 +379,8 @@ def build_pr_list_description(prs):
 #Commit the changes to the manifest files and push to the feature branch
 def commit_and_push(manifest_repo_path, commit_message):
     repo = Repo(manifest_repo_path)
+    print(f"[DEBUG] commit_and_push: current branch is {repo.active_branch.name}")
+    print(f"[DEBUG] commit_and_push: git status before commit:\n" + repo.git.status())
     if repo.is_dirty():
         # Ensure git user.name and user.email are set
         config_writer = repo.config_writer()
@@ -394,7 +396,9 @@ def commit_and_push(manifest_repo_path, commit_message):
             config_writer.set_value('user', 'email', os.environ.get('GIT_COMMITTER_EMAIL', 'github-actions[bot]@users.noreply.github.com'))
         config_writer.release()
         repo.git.commit('-m', commit_message)
+        print(f"[DEBUG] commit_and_push: git log after commit:\n" + repo.git.log('-n', '2', '--oneline'))
         repo.git.push('origin', repo.active_branch.name)
+        print(f"[DEBUG] commit_and_push: git status after push:\n" + repo.git.status())
     else:
         print("No changes to commit.")
 
