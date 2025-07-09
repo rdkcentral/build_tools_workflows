@@ -548,53 +548,97 @@ def main():
 
     print("Updates to be pushed to feature branch: {}".format(updates))
 
-    # Generate a feature branch name and PR title/description
-    feature_branch = f"auto-update-{ticket_number.lower()}"
-    manifest_pr_title = f"[Auto] Update meta layer for {ticket_number}"
-    manifest_pr_description = build_pr_list_description(updates)
-
-    # Switch to feature branch BEFORE making changes
-    create_or_checkout_branch(Repo(manifest_repo_path), feature_branch, base_branch)
-
-    changes_made, support_changed, support_repo = update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates)
-    print(f"[DEBUG] changes_made: {changes_made}, support_changed: {support_changed}")
-    if changes_made:
-        commit_and_push(
-            manifest_repo_path,
-            "Update manifest and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
-        )
-        create_pull_request(
-            github_token,
-            manifest_repo_name,
-            feature_branch,
-            base_branch,
-            manifest_pr_title,
-            manifest_pr_description
-        )
-    else:
-        print("[DEBUG] No changes detected, PR will not be created for meta layer.")
-
-    # Support layer PR
-    if support_changed:
-        support_branch = f"auto-update-support-{ticket_number.lower()}"
-        support_pr_title = f"[Auto] Update support layer for {ticket_number}"
-        support_pr_description = build_pr_list_description(updates)
-        if support_repo:
-            create_or_checkout_branch(support_repo, support_branch, base_branch)
+    # Only if the PR is linked to an issue, aggregate all PRs under a single branch for the issue
+    if issue_number:
+        feature_branch = f"auto-update-{ticket_number.lower()}"
+        manifest_pr_title = f"[Auto] Update meta layer for {ticket_number}"
+        manifest_pr_description = build_pr_list_description(updates)
+        # Switch to feature branch BEFORE making changes
+        create_or_checkout_branch(Repo(manifest_repo_path), feature_branch, base_branch)
+        changes_made, support_changed, support_repo = update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates)
+        print(f"[DEBUG] changes_made: {changes_made}, support_changed: {support_changed}")
+        if changes_made:
             commit_and_push(
-                generic_support_path,
-                "Update support layer entservices SRCREV for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
+                manifest_repo_path,
+                "Update manifest and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
             )
             create_pull_request(
                 github_token,
-                'rdkcentral/meta-middleware-generic-support',
-                support_branch,
+                manifest_repo_name,
+                feature_branch,
                 base_branch,
-                support_pr_title,
-                support_pr_description
+                manifest_pr_title,
+                manifest_pr_description
             )
         else:
-            print("[DEBUG] No support_repo found for PR creation.")
+            print("[DEBUG] No changes detected, PR will not be created for meta layer.")
+
+        # Support layer PR
+        if support_changed:
+            support_branch = f"auto-update-support-{ticket_number.lower()}"
+            support_pr_title = f"[Auto] Update support layer for {ticket_number}"
+            support_pr_description = build_pr_list_description(updates)
+            if support_repo:
+                create_or_checkout_branch(support_repo, support_branch, base_branch)
+                commit_and_push(
+                    generic_support_path,
+                    "Update support layer entservices SRCREV for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
+                )
+                create_pull_request(
+                    github_token,
+                    'rdkcentral/meta-middleware-generic-support',
+                    support_branch,
+                    base_branch,
+                    support_pr_title,
+                    support_pr_description
+                )
+            else:
+                print("[DEBUG] No support_repo found for PR creation.")
+    else:
+        # If not linked to an issue, run for the individual PR only (separate branch)
+        feature_branch = f"auto-update-{ticket_number.lower()}-{pr_number}"
+        manifest_pr_title = f"[Auto] Update meta layer for {ticket_number} (PR {pr_number})"
+        manifest_pr_description = build_pr_list_description(updates)
+        create_or_checkout_branch(Repo(manifest_repo_path), feature_branch, base_branch)
+        changes_made, support_changed, support_repo = update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates)
+        print(f"[DEBUG] changes_made: {changes_made}, support_changed: {support_changed}")
+        if changes_made:
+            commit_and_push(
+                manifest_repo_path,
+                "Update manifest and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
+            )
+            create_pull_request(
+                github_token,
+                manifest_repo_name,
+                feature_branch,
+                base_branch,
+                manifest_pr_title,
+                manifest_pr_description
+            )
+        else:
+            print("[DEBUG] No changes detected, PR will not be created for meta layer.")
+
+        # Support layer PR
+        if support_changed:
+            support_branch = f"auto-update-support-{ticket_number.lower()}-{pr_number}"
+            support_pr_title = f"[Auto] Update support layer for {ticket_number} (PR {pr_number})"
+            support_pr_description = build_pr_list_description(updates)
+            if support_repo:
+                create_or_checkout_branch(support_repo, support_branch, base_branch)
+                commit_and_push(
+                    generic_support_path,
+                    "Update support layer entservices SRCREV for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
+                )
+                create_pull_request(
+                    github_token,
+                    'rdkcentral/meta-middleware-generic-support',
+                    support_branch,
+                    base_branch,
+                    support_pr_title,
+                    support_pr_description
+                )
+            else:
+                print("[DEBUG] No support_repo found for PR creation.")
 # ...existing code...
 if __name__ == '__main__':
     main()
