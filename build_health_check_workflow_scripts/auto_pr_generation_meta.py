@@ -249,8 +249,10 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                 lines = f.readlines()
             file_changed = False
             if not tag:
-                raise RuntimeError(f"No tag found that contains commit {sha} for repo {repo_name}")
-            tag_to_use = tag
+                print(f"[WARNING] No tag found that contains commit {sha} for repo {repo_name}. Setting tag as None.")
+                tag_to_use = None
+            else:
+                tag_to_use = tag
             with open(bb_file, 'w') as f:
                 for line in lines:
                     line_stripped = line.strip()
@@ -308,8 +310,10 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
 
         # Only update pkgrev_file in support layer repo
         if not tag:
-            raise RuntimeError(f"No tag found that contains commit {sha} for repo {repo_name}")
-        tag_to_use = tag
+            print(f"[WARNING] No tag found that contains commit {sha} for repo {repo_name}. Setting tag as None.")
+            tag_to_use = None
+        else:
+            tag_to_use = tag
         if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
             with open(pkgrev_file, 'r') as f:
                 lines = f.readlines()
