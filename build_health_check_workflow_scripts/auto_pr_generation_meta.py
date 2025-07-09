@@ -322,9 +322,13 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         elif support_bb_file:
             print(f"[DEBUG] Support .bb file does not exist: {support_bb_file}")
 
+        # --- DEBUG: Print comp, pkgrev_pv_field, and tag for every update attempt ---
+        print(f"[DEBUG] update_bb_and_pkgrev: comp={comp}, pkgrev_pv_field={pkgrev_pv_field}, tag={tag}, pkgrev_file={pkgrev_file}")
         # Only update pkgrev_file in support layer repo
+        # --- DEBUG: Always log intent to update PV, even if tag is None ---
+        print(f"[DEBUG] Attempting PV update for {pkgrev_pv_field} in {pkgrev_file} with tag_to_use={tag if tag else None}")
         if not tag:
-            print(f"[WARNING] No tag found that contains commit {sha} for repo {repo_name}. Setting tag as None.")
+            print(f"[WARNING] No tag found that contains commit {sha} for repo {repo_name}. Setting PV to None for {pkgrev_pv_field} in {pkgrev_file}.")
             tag_to_use = None
         else:
             tag_to_use = tag
@@ -349,6 +353,9 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                 with open(pkgrev_file, 'a') as f_append:
                     f_append.write(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
                 file_changed = True
+            print(f"[DEBUG] After write: file_changed={file_changed}, found_pv={found_pv}")
+            with open(pkgrev_file, 'r') as f_check:
+                print(f"[DEBUG] pkgrev_file content after update:\n" + f_check.read())
             if file_changed:
                 support_repo.git.add(pkgrev_file)
                 support_changed = True
