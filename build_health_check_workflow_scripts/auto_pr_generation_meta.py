@@ -399,6 +399,20 @@ def create_or_checkout_branch(repo, branch_name, base_branch):
         # Fetch all branches from the remote
         repo.git.fetch('origin')
 
+        # Ensure git user.name and user.email are set for this repo
+        config_writer = repo.config_writer()
+        try:
+            user_name = config_writer.get_value('user', 'name', None)
+            user_email = config_writer.get_value('user', 'email', None)
+        except Exception:
+            user_name = None
+            user_email = None
+        if not user_name:
+            config_writer.set_value('user', 'name', os.environ.get('GIT_COMMITTER_NAME', 'github-actions[bot]'))
+        if not user_email:
+            config_writer.set_value('user', 'email', os.environ.get('GIT_COMMITTER_EMAIL', 'github-actions[bot]@users.noreply.github.com'))
+        config_writer.release()
+
         # Check if the branch exists in the remote repository
         existing_branches = repo.git.branch('-r')
         if f'origin/{branch_name}' in existing_branches:
