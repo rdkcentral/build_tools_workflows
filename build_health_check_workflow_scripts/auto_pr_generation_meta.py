@@ -403,6 +403,13 @@ def create_or_checkout_branch(repo, branch_name, base_branch):
         existing_branches = repo.git.branch('-r')
         if f'origin/{branch_name}' in existing_branches:
             print(f"Branch {branch_name} already exists remotely. Checking out and updating it.")
+            # Commit any outstanding changes before switching branches
+            if repo.is_dirty():
+                try:
+                    repo.git.add('--all')
+                    repo.git.commit('-m', 'WIP: commit outstanding changes before branch switch')
+                except Exception as e:
+                    print(f"[DEBUG] Could not commit outstanding changes: {e}")
             # If we are not already on the branch, check it out
             current_branch = repo.active_branch.name
             if current_branch != branch_name:
