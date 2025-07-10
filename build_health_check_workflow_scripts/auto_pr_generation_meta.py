@@ -432,6 +432,7 @@ def commit_and_push(manifest_repo_path, commit_message):
     else:
         print("No changes to commit.")
 
+
 #Create a new PR for the updated manifest files
 def create_pull_request(github_token, repo_name, head_branch, base_branch, title, description):
     g = Github(github_token)
@@ -450,6 +451,14 @@ def create_pull_request(github_token, repo_name, head_branch, base_branch, title
     except github.GithubException as e:
         print("Failed to create PR:", str(e))
         return None
+
+# Create a summary issue linking meta*video and meta*support auto PRs
+def create_summary_issue(github_token, repo_name, issue_title, issue_body):
+    g = Github(github_token)
+    repo = g.get_repo(repo_name)
+    issue = repo.create_issue(title=issue_title, body=issue_body)
+    print(f"Issue created: {issue.html_url}")
+    return issue
 
 #Ensure that the label exists in the repository
 def ensure_label_exists(repo, label_name, color='FFFFFF'):
@@ -654,6 +663,8 @@ def main():
     print("Updates to be pushed to feature branch: {}".format(updates))
 
     # Only if the PR is linked to an issue, aggregate all PRs under a single branch for the issue
+    meta_pr_obj = None
+    support_pr_obj = None
     if issue_number:
         feature_branch = f"auto-update-{ticket_number.lower()}"
         manifest_pr_title = f"[Auto] Update meta layer for {ticket_number}"
@@ -667,7 +678,7 @@ def main():
                 manifest_repo_path,
                 "Update manifest and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
             )
-            create_pull_request(
+            meta_pr_obj = create_pull_request(
                 github_token,
                 manifest_repo_name,
                 feature_branch,
@@ -689,7 +700,7 @@ def main():
                     generic_support_path,
                     "Update support layer entservices SRCREV for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
                 )
-                create_pull_request(
+                support_pr_obj = create_pull_request(
                     github_token,
                     'rdkcentral/meta-middleware-generic-support',
                     support_branch,
@@ -699,6 +710,22 @@ def main():
                 )
             else:
                 print("[DEBUG] No support_repo found for PR creation.")
+        # Create summary issue if at least one PR was created
+        if meta_pr_obj or support_pr_obj:
+            pr_links = []
+            if meta_pr_obj:
+                pr_links.append(f"- [Meta Video Auto PR]({meta_pr_obj.html_url})")
+            if support_pr_obj:
+                pr_links.append(f"- [Meta Support Auto PR]({support_pr_obj.html_url})")
+            issue_title = f"[Auto] Summary for {ticket_number} Updates"
+            issue_body = (
+                f"## Automated Update Summary for {ticket_number}\n\n"
+                f"### PRs Created:\n" +
+                "\n".join(pr_links) +
+                "\n\n### Details:\n" +
+                build_pr_list_description(updates)
+            )
+            create_summary_issue(github_token, manifest_repo_name, issue_title, issue_body)
     else:
         # If not linked to an issue, run for the individual PR only (separate branch)
         feature_branch = f"auto-update-{ticket_number.lower()}-{pr_number}"
@@ -712,7 +739,7 @@ def main():
                 manifest_repo_path,
                 "Update manifest and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
             )
-            create_pull_request(
+            meta_pr_obj = create_pull_request(
                 github_token,
                 manifest_repo_name,
                 feature_branch,
@@ -734,7 +761,7 @@ def main():
                     generic_support_path,
                     "Update support layer entservices SRCREV for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
                 )
-                create_pull_request(
+                support_pr_obj = create_pull_request(
                     github_token,
                     'rdkcentral/meta-middleware-generic-support',
                     support_branch,
@@ -744,6 +771,22 @@ def main():
                 )
             else:
                 print("[DEBUG] No support_repo found for PR creation.")
+        # Create summary issue if at least one PR was created
+        if meta_pr_obj or support_pr_obj:
+            pr_links = []
+            if meta_pr_obj:
+                pr_links.append(f"- [Meta Video Auto PR]({meta_pr_obj.html_url})")
+            if support_pr_obj:
+                pr_links.append(f"- [Meta Support Auto PR]({support_pr_obj.html_url})")
+            issue_title = f"[Auto] Summary for {ticket_number} (PR {pr_number}) Updates"
+            issue_body = (
+                f"## Automated Update Summary for {ticket_number} (PR {pr_number})\n\n"
+                f"### PRs Created:\n" +
+                "\n".join(pr_links) +
+                "\n\n### Details:\n" +
+                build_pr_list_description(updates)
+            )
+            create_summary_issue(github_token, manifest_repo_name, issue_title, issue_body)
 # ...existing code...
 if __name__ == '__main__':
     main()
