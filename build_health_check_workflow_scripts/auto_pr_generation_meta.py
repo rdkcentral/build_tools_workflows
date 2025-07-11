@@ -207,33 +207,16 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         pkgrev_pv_field = None
         if repo_name.startswith('rdkcentral/entservices-'):
             comp = repo_name.split('/')[-1]
-            # Special case for entservices-apis
+            # Determine .bb file location for entservices-apis and other entservices-* components
             if comp == 'entservices-apis':
                 bb_file = os.path.join(manifest_repo_path, 'recipes-extended', 'wpe-framework', 'entservices-apis.bb')
             else:
-                entservices_dir = os.path.join(manifest_repo_path, 'recipes-extended', 'entservices')
-                if os.path.isdir(entservices_dir):
-                    for root, dirs, files in os.walk(entservices_dir):
-                        for f in files:
-                            if f == f'entservices-{comp.split("entservices-")[-1]}.bb':
-                                bb_file = os.path.join(root, f)
-                                break
-                        if bb_file:
-                            break
-            # For support layer PR
+                bb_file = os.path.join(manifest_repo_path, 'recipes-extended', 'entservices', f'{comp}.bb')
+            # For support layer PR (if support .bb files exist, keep logic, else skip)
             support_entservices_dir = os.path.join(generic_support_path, 'recipes-extended', 'entservices')
-            # Searching for support .bb in support_entservices_dir
-            if os.path.isdir(support_entservices_dir):
-                for root, dirs, files in os.walk(support_entservices_dir):
-                    for f in files:
-                        if f == f'entservices-{comp.split("entservices-")[-1]}.bb':
-                            support_bb_file = os.path.join(root, f)
-                            break
-                    if support_bb_file:
-                        break
+            support_bb_file = os.path.join(support_entservices_dir, f'{comp}.bb')
             pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
             pkgrev_pv_field = f'PV:pn-{comp}'
-            # pkgrev_file: {pkgrev_file}, pkgrev_pv_field: {pkgrev_pv_field}
         else:
             print(f"[DEBUG] Skipping repo {repo_name} (not handled)")
             continue
