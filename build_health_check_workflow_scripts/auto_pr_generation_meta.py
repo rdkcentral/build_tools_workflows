@@ -347,7 +347,7 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                 print(f"No change needed for {pkgrev_file}")
         elif pkgrev_file:
             print(f"pkgrev_file does not exist or support_repo not found: {pkgrev_file}")
-    print(f"update_bb_and_pkgrev changed={changed}, support_changed={support_changed}")
+    print(f"update_bb_and_pkgrev completed")
     return changed, support_changed, support_repo
 #Build the PR list description
 def build_pr_list_description(prs):
@@ -474,7 +474,6 @@ def create_or_checkout_branch(repo, branch_name, base_branch):
 
             # Create and check out the new branch locally
             repo.git.checkout('-b', branch_name)
-            print(f"Created and checked out new branch: {branch_name}")
 
             # Push the newly created branch to the remote
             repo.git.push('origin', branch_name)
@@ -614,7 +613,7 @@ def main():
             tag = None
         updates.append({'repo': pr['repo'], 'sha': pr['sha'], 'tag': tag})
 
-    print("Updates to be pushed to feature branch: {}".format(updates))
+    print("Updates to be pushed to topic branch: {}".format(updates))
 
     meta_pr_obj = None
     support_pr_obj = None
@@ -644,7 +643,7 @@ def main():
             print("[DEBUG] No changes detected, PR will not be created for meta layer.")
 
         # Support layer PR
-        support_branch = f"topic-issue/auto-support-{ticket_number.lower()}-{issue_number}"
+        support_branch = f"topic/auto-support-{ticket_number.lower()}-issue-{issue_number}"
         support_pr_title = f"[Auto] Update support layer for {ticket_number}"
         support_pr_description = build_pr_list_description(updates)
         if support_changed:
