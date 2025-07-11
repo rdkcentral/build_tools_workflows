@@ -227,35 +227,28 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                             break
             # For support layer PR
             support_entservices_dir = os.path.join(generic_support_path, 'recipes-extended', 'entservices')
-            print(f"[DBG] Searching for support .bb in {support_entservices_dir}")
+            # Searching for support .bb in support_entservices_dir
             if os.path.isdir(support_entservices_dir):
                 for root, dirs, files in os.walk(support_entservices_dir):
                     for f in files:
-                        print(f"[DBG] Support layer: checking file: {f}")
+                        # Support layer: checking file: {f}
                         if f == f'entservices-{comp.split("entservices-")[-1]}.bb':
                             support_bb_file = os.path.join(root, f)
-                            print(f"[DBG] Found support_bb_file: {support_bb_file}")
+                            # Found support_bb_file: {support_bb_file}
                             break
                     if support_bb_file:
                         break
             pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
             pkgrev_pv_field = f'PV:pn-{comp}'
-            print(f"[DBG] pkgrev_file: {pkgrev_file}, pkgrev_pv_field: {pkgrev_pv_field}")
-        elif repo_name == 'rdk-e/rdkservices-cpc':
-            bb_file = os.path.join(manifest_repo_path.replace('meta-middleware-generic-support', 'meta-rdk-comast-video'), 'rdkservices-comcast.bb')
-            cspc_support_path = generic_support_path.replace('meta-middleware-generic-support', 'meta-middleware-cspc-support')
-            support_bb_file = None  # Not handled for support layer in this case
-            pkgrev_file = os.path.join(cspc_support_path, 'conf', 'include', 'cspc-pkgrev.inc')
-            pkgrev_pv_field = 'rdkservices-comcast_PV'
-            print(f"[DBG] cspc case, bb_file: {bb_file}, pkgrev_file: {pkgrev_file}, pkgrev_pv_field: {pkgrev_pv_field}")
+            # pkgrev_file: {pkgrev_file}, pkgrev_pv_field: {pkgrev_pv_field}
+        # ...existing code...
         else:
             print(f"[DEBUG] Skipping repo {repo_name} (not handled)")
             continue
-        print(f"[DEBUG] bb_file: {bb_file}")
-        print(f"[DEBUG] pkgrev_file: {pkgrev_file}")
+        # Informational: bb_file and pkgrev_file
         # Update .bb file SRCREV and PV in meta layer
         if bb_file and os.path.exists(bb_file):
-            print(f"[DBG] Opening bb_file: {bb_file}")
+            # Opening bb_file: {bb_file}
             with open(bb_file, 'r', newline='') as f:
                 old_lines = f.readlines()
             file_changed = False
@@ -267,14 +260,14 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             new_lines = []
             for idx, line in enumerate(old_lines):
                 line_stripped = line.strip()
-                print(f"[DBG] bb_file line {idx}: {line_stripped}")
+                # bb_file line {idx}: {line_stripped}
                 # Match SRCREV, SRCREV ?=, or SRCREV_<component> = (component always lower case)
                 if (
                     line_stripped.startswith('SRCREV =') or
                     line_stripped.startswith('SRCREV ?=') or
                     (line_stripped.startswith(f'SRCREV_{comp} =') if comp else False)
                 ):
-                    print(f"[DEBUG] Updating SRCREV in {bb_file} to {sha}")
+                    # Updating SRCREV in {bb_file} to {sha}
                     # Preserve the assignment type (e.g., =, ?=)
                     if 'SRCREV ?=' in line_stripped:
                         new_lines.append(f'SRCREV ?= "{sha}"\n')
@@ -284,117 +277,93 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                         new_lines.append(f'SRCREV = "{sha}"\n')
                     file_changed = True
                 elif line_stripped.startswith('PV ?='):
-                    print(f"[DEBUG] Updating PV in {bb_file} to {tag_to_use}")
+                    # Updating PV in {bb_file} to {tag_to_use}
                     new_lines.append(f'PV ?= "{tag_to_use}"\n')
                     file_changed = True
                 else:
                     new_lines.append(line)
             # Print diff for debugging
-            if old_lines != new_lines:
-                print("[DEBUG] Diff for bb_file:")
-                for i, (old, new) in enumerate(zip(old_lines, new_lines)):
-                    if old != new:
-                        print(f"- {old.rstrip()}\n+ {new.rstrip()}")
-            else:
-                print("[DEBUG] No content change in bb_file.")
+            # Diff and content change info removed
             # Write only if changed
             if old_lines != new_lines:
                 with open(bb_file, 'w', newline='\n') as f:
                     f.writelines(new_lines)
                 repo.git.add(bb_file)
                 changed = True
-                print(f"[DEBUG] Changed {bb_file}")
+                print(f"Updated {bb_file}")
             else:
-                print(f"[DEBUG] No change needed for {bb_file}")
+                print(f"No change needed for {bb_file}")
         else:
             print(f"[DEBUG] .bb file does not exist: {bb_file}")
 
         # Update .bb file SRCREV in support layer (if present)
         if support_repo and support_bb_file and os.path.exists(support_bb_file):
-            print(f"[DBG] Opening support_bb_file: {support_bb_file}")
+            # Opening support_bb_file: {support_bb_file}
             with open(support_bb_file, 'r', newline='') as f:
                 old_lines = f.readlines()
             file_changed = False
             new_lines = []
             for idx, line in enumerate(old_lines):
-                print(f"[DBG] support_bb_file line {idx}: {line.strip()}")
+                # support_bb_file line {idx}: {line.strip()}
                 if line.strip().startswith('SRCREV ='):
-                    print(f"[DEBUG] Updating SRCREV in {support_bb_file} to {sha}")
+                    # Updating SRCREV in {support_bb_file} to {sha}
                     new_lines.append(f'SRCREV = "{sha}"\n')
                     file_changed = True
                 else:
                     new_lines.append(line)
             # Print diff for debugging
-            if old_lines != new_lines:
-                print("[DEBUG] Diff for support_bb_file:")
-                for i, (old, new) in enumerate(zip(old_lines, new_lines)):
-                    if old != new:
-                        print(f"- {old.rstrip()}\n+ {new.rstrip()}")
-            else:
-                print("[DEBUG] No content change in support_bb_file.")
+            # Diff and content change info removed
             if old_lines != new_lines:
                 with open(support_bb_file, 'w', newline='\n') as f:
                     f.writelines(new_lines)
                 support_repo.git.add(support_bb_file)
                 support_changed = True
-                print(f"[DEBUG] Changed {support_bb_file}")
+                print(f"Updated {support_bb_file}")
             else:
-                print(f"[DEBUG] No change needed for {support_bb_file}")
+                print(f"No change needed for {support_bb_file}")
         elif support_bb_file:
             print(f"[DEBUG] Support .bb file does not exist: {support_bb_file}")
 
         # --- DEBUG: Print comp, pkgrev_pv_field, and tag for every update attempt ---
-        print(f"[DEBUG] update_bb_and_pkgrev: comp={comp}, pkgrev_pv_field={pkgrev_pv_field}, tag={tag}, pkgrev_file={pkgrev_file}")
-        # Only update pkgrev_file in support layer repo
-        # --- DEBUG: Always log intent to update PV, even if tag is None ---
-        print(f"[DEBUG] Attempting PV update for {pkgrev_pv_field} in {pkgrev_file} with tag_to_use={tag if tag else None}")
+        # Informational: update_bb_and_pkgrev status
         if not tag:
-            print(f"[WARNING] No tag found that contains commit {sha} for repo {repo_name}. Setting PV to None for {pkgrev_pv_field} in {pkgrev_file}.")
+            print(f"No tag found that contains commit {sha} for repo {repo_name}. Setting PV to None for {pkgrev_pv_field} in {pkgrev_file}.")
             tag_to_use = None
         else:
             tag_to_use = tag
         if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
-            print(f"[DBG] Opening pkgrev_file: {pkgrev_file}")
+            # Opening pkgrev_file: {pkgrev_file}
             with open(pkgrev_file, 'r', newline='') as f:
                 old_lines = f.readlines()
             file_changed = False
             found_pv = False
             new_lines = []
             for idx, line in enumerate(old_lines):
-                print(f"[DBG] pkgrev_file line {idx}: {line.strip()}")
+                # pkgrev_file line {idx}: {line.strip()}
                 if line.strip().startswith(f'{pkgrev_pv_field} ='):
-                    print(f"[DEBUG] Updating PV in {pkgrev_file} to {tag_to_use} (line {idx})")
+                    # Updating PV in {pkgrev_file} to {tag_to_use} (line {idx})
                     new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
                     file_changed = True
                     found_pv = True
                 else:
                     new_lines.append(line)
             if not found_pv:
-                print(f"[DEBUG] PV field {pkgrev_pv_field} not found in {pkgrev_file}, appending new line.")
+                print(f"PV field {pkgrev_pv_field} not found in {pkgrev_file}, appending new line.")
                 new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
                 file_changed = True
             # Print diff for debugging
-            if old_lines != new_lines:
-                print("[DEBUG] Diff for pkgrev_file:")
-                for i, (old, new) in enumerate(zip(old_lines, new_lines)):
-                    if old != new:
-                        print(f"- {old.rstrip()}\n+ {new.rstrip()}")
-                if len(new_lines) > len(old_lines):
-                    for i in range(len(old_lines), len(new_lines)):
-                        print(f"+ {new_lines[i].rstrip()}")
-            else:
-                print("[DEBUG] No content change in pkgrev_file.")
+            # Diff and content change info removed
             if old_lines != new_lines:
                 with open(pkgrev_file, 'w', newline='\n') as f:
                     f.writelines(new_lines)
                 support_repo.git.add(pkgrev_file)
                 support_changed = True
-                print(f"[DEBUG] Changed {pkgrev_file}")
+                print(f"Updated {pkgrev_file}")
             else:
-                print(f"[DEBUG] No change needed for {pkgrev_file}")
+                print(f"No change needed for {pkgrev_file}")
         elif pkgrev_file:
-            print(f"[DEBUG] pkgrev_file does not exist or support_repo not found: {pkgrev_file}")
-    print(f"[DEBUG] update_bb_and_pkgrev changed={changed}, support_changed={support_changed}")
+            print(f"pkgrev_file does not exist or support_repo not found: {pkgrev_file}")
+    print(f"update_bb_and_pkgrev changed={changed}, support_changed={support_changed}")
     return changed, support_changed, support_repo
 #Build the PR list description
 def build_pr_list_description(prs):
@@ -583,10 +552,10 @@ def get_tag_for_sha(github_token, repo_full_name, sha):
 
 def main():
     github_token = os.getenv('GITHUB_TOKEN')
-    manifest_repo_path = os.getenv('META_REPO_PATH')
+    meta_repo_path = os.getenv('META_REPO_PATH')
     generic_support_path = os.getenv('GENERIC_SUPPORT_PATH')  # new env var for meta-middleware-generic-support
     pr_number = os.getenv('PR_NUMBER')
-    manifest_repo_name = os.getenv('META_REPO_NAME')
+    meta_repo_name = os.getenv('META_REPO_NAME')
     repo_name = os.getenv('GITHUB_REPOSITORY')
     repo_owner = os.getenv('GITHUB_ORG')
     base_branch = os.getenv('BASE_BRANCH')
@@ -595,7 +564,7 @@ def main():
     if not generic_support_path:
         print("ERROR: GENERIC_SUPPORT_PATH environment variable is not set.")
         sys.exit(1)
-    if not manifest_repo_path:
+    if not meta_repo_path:
         print("ERROR: META_REPO_PATH environment variable is not set.")
         sys.exit(1)
     if not github_token:
@@ -604,7 +573,7 @@ def main():
     if not pr_number:
         print("ERROR: PR_NUMBER environment variable is not set.")
         sys.exit(1)
-    if not manifest_repo_name:
+    if not meta_repo_name:
         print("ERROR: META_REPO_NAME environment variable is not set.")
         sys.exit(1)
     if not repo_name:
@@ -623,7 +592,7 @@ def main():
 
     # Extract ticket number
     ticket_number = extract_ticket_number(meta_pr.title)
- 
+
     prs, issue_repo_name, issue_number = fetch_merge_commits(repo_owner, repo_name, int(pr_number), github_token)
     # If PR is linked to an issue, check if all PRs in that issue are merged to the target branch
     if issue_number:
@@ -662,38 +631,38 @@ def main():
 
     print("Updates to be pushed to feature branch: {}".format(updates))
 
-    # Only if the PR is linked to an issue, aggregate all PRs under a single branch for the issue
     meta_pr_obj = None
     support_pr_obj = None
+    comp_name = updates[0]['repo'].split('/')[-1] if updates else "unknown"
     if issue_number:
-        feature_branch = f"auto-update-{ticket_number.lower()}"
-        manifest_pr_title = f"[Auto] Update meta layer for {ticket_number}"
-        manifest_pr_description = build_pr_list_description(updates)
-        # Switch to feature branch BEFORE making changes
-        create_or_checkout_branch(Repo(manifest_repo_path), feature_branch, base_branch)
-        changes_made, support_changed, support_repo = update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates)
+        # Branch name for issue-linked PRs
+        feature_branch = f"topic/auto-{ticket_number.lower()}-issue-{issue_number}"
+        meta_pr_title = f"[Auto] Update meta layer for {ticket_number}"
+        meta_pr_description = build_pr_list_description(updates)
+        create_or_checkout_branch(Repo(meta_repo_path), feature_branch, base_branch)
+        changes_made, support_changed, support_repo = update_bb_and_pkgrev(meta_repo_path, generic_support_path, updates)
         print(f"[DEBUG] changes_made: {changes_made}, support_changed: {support_changed}")
         if changes_made:
             commit_and_push(
-                manifest_repo_path,
-                "Update manifest and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
+                meta_repo_path,
+                "Update meta and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
             )
             meta_pr_obj = create_pull_request(
                 github_token,
-                manifest_repo_name,
+                meta_repo_name,
                 feature_branch,
                 base_branch,
-                manifest_pr_title,
-                manifest_pr_description
+                meta_pr_title,
+                meta_pr_description
             )
         else:
             print("[DEBUG] No changes detected, PR will not be created for meta layer.")
 
         # Support layer PR
+        support_branch = f"topic-issue/auto-support-{ticket_number.lower()}-{issue_number}"
+        support_pr_title = f"[Auto] Update support layer for {ticket_number}"
+        support_pr_description = build_pr_list_description(updates)
         if support_changed:
-            support_branch = f"auto-update-support-{ticket_number.lower()}"
-            support_pr_title = f"[Auto] Update support layer for {ticket_number}"
-            support_pr_description = build_pr_list_description(updates)
             if support_repo:
                 create_or_checkout_branch(support_repo, support_branch, base_branch)
                 commit_and_push(
@@ -717,7 +686,7 @@ def main():
                 pr_links.append(f"- [Meta Video Auto PR]({meta_pr_obj.html_url})")
             if support_pr_obj:
                 pr_links.append(f"- [Meta Support Auto PR]({support_pr_obj.html_url})")
-            issue_title = f"[Auto] Summary for {ticket_number} Updates"
+            issue_title = f"{ticket_number} - Auto PR for rdkcentral/{comp_name} {issue_number}"
             issue_body = (
                 f"## Automated Update Summary for {ticket_number}\n\n"
                 f"### PRs Created:\n" +
@@ -725,36 +694,36 @@ def main():
                 "\n\n### Details:\n" +
                 build_pr_list_description(updates)
             )
-            create_summary_issue(github_token, manifest_repo_name, issue_title, issue_body)
+            create_summary_issue(github_token, meta_repo_name, issue_title, issue_body)
     else:
-        # If not linked to an issue, run for the individual PR only (separate branch)
-        feature_branch = f"auto-update-{ticket_number.lower()}-{pr_number}"
-        manifest_pr_title = f"[Auto] Update meta layer for {ticket_number} (PR {pr_number})"
-        manifest_pr_description = build_pr_list_description(updates)
-        create_or_checkout_branch(Repo(manifest_repo_path), feature_branch, base_branch)
-        changes_made, support_changed, support_repo = update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates)
+        # Branch name for single PRs
+        feature_branch = f"topic/auto-{ticket_number.lower()}-pr-{pr_number}"
+        meta_pr_title = f"[Auto] Update meta layer for {ticket_number} (PR {pr_number})"
+        meta_pr_description = build_pr_list_description(updates)
+        create_or_checkout_branch(Repo(meta_repo_path), feature_branch, base_branch)
+        changes_made, support_changed, support_repo = update_bb_and_pkgrev(meta_repo_path, generic_support_path, updates)
         print(f"[DEBUG] changes_made: {changes_made}, support_changed: {support_changed}")
         if changes_made:
             commit_and_push(
-                manifest_repo_path,
-                "Update manifest and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
+                meta_repo_path,
+                "Update meta and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
             )
             meta_pr_obj = create_pull_request(
                 github_token,
-                manifest_repo_name,
+                meta_repo_name,
                 feature_branch,
                 base_branch,
-                manifest_pr_title,
-                manifest_pr_description
+                meta_pr_title,
+                meta_pr_description
             )
         else:
             print("[DEBUG] No changes detected, PR will not be created for meta layer.")
 
         # Support layer PR
+        support_branch = f"topic/auto-support-{ticket_number.lower()}-pr-{pr_number}"
+        support_pr_title = f"[Auto] Update support layer for {ticket_number} (PR {pr_number})"
+        support_pr_description = build_pr_list_description(updates)
         if support_changed:
-            support_branch = f"auto-update-support-{ticket_number.lower()}-{pr_number}"
-            support_pr_title = f"[Auto] Update support layer for {ticket_number} (PR {pr_number})"
-            support_pr_description = build_pr_list_description(updates)
             if support_repo:
                 create_or_checkout_branch(support_repo, support_branch, base_branch)
                 commit_and_push(
@@ -778,7 +747,7 @@ def main():
                 pr_links.append(f"- [Meta Video Auto PR]({meta_pr_obj.html_url})")
             if support_pr_obj:
                 pr_links.append(f"- [Meta Support Auto PR]({support_pr_obj.html_url})")
-            issue_title = f"[Auto] Summary for {ticket_number} (PR {pr_number}) Updates"
+            issue_title = f"{ticket_number} - Auto PR for rdkcentral/{comp_name} {pr_number}"
             issue_body = (
                 f"## Automated Update Summary for {ticket_number} (PR {pr_number})\n\n"
                 f"### PRs Created:\n" +
@@ -786,7 +755,7 @@ def main():
                 "\n\n### Details:\n" +
                 build_pr_list_description(updates)
             )
-            create_summary_issue(github_token, manifest_repo_name, issue_title, issue_body)
+            create_summary_issue(github_token, meta_repo_name, issue_title, issue_body)
 # ...existing code...
 if __name__ == '__main__':
     main()
