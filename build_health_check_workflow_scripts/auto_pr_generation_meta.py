@@ -207,21 +207,16 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         pkgrev_pv_field = None
         if repo_name.startswith('rdkcentral/entservices-'):
             comp = repo_name.split('/')[-1]
-            print(f"[DBG] Component: {comp}")
             # Special case for entservices-apis
             if comp == 'entservices-apis':
                 bb_file = os.path.join(manifest_repo_path, 'recipes-extended', 'wpe-framework', 'entservices-apis.bb')
-                print(f"[DBG] entservices-apis special case, bb_file: {bb_file}")
             else:
                 entservices_dir = os.path.join(manifest_repo_path, 'recipes-extended', 'entservices')
-                print(f"[DBG] Searching for .bb in {entservices_dir}")
                 if os.path.isdir(entservices_dir):
                     for root, dirs, files in os.walk(entservices_dir):
                         for f in files:
-                            print(f"[DBG] Checking file: {f}")
                             if f == f'entservices-{comp.split("entservices-")[-1]}.bb':
                                 bb_file = os.path.join(root, f)
-                                print(f"[DBG] Found bb_file: {bb_file}")
                                 break
                         if bb_file:
                             break
@@ -231,10 +226,8 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             if os.path.isdir(support_entservices_dir):
                 for root, dirs, files in os.walk(support_entservices_dir):
                     for f in files:
-                        # Support layer: checking file: {f}
                         if f == f'entservices-{comp.split("entservices-")[-1]}.bb':
                             support_bb_file = os.path.join(root, f)
-                            # Found support_bb_file: {support_bb_file}
                             break
                     if support_bb_file:
                         break
