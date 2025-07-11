@@ -625,7 +625,6 @@ def main():
         meta_pr_description = build_pr_list_description(updates)
         create_or_checkout_branch(Repo(meta_repo_path), feature_branch, base_branch)
         changes_made, support_changed, support_repo = update_bb_and_pkgrev(meta_repo_path, generic_support_path, updates)
-        print(f"[DEBUG] changes_made: {changes_made}, support_changed: {support_changed}")
         if changes_made:
             commit_and_push(
                 meta_repo_path,
