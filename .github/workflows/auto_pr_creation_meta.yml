@@ -63,6 +63,8 @@ jobs:
           GENERIC_SUPPORT_PATH: ${{ github.workspace }}/rdkcentral/meta-middleware-generic-support
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_BRANCH: test_develop
+          GIT_COMMITTER_NAME: "bot"
+          GIT_COMMITTER_EMAIL: ${{ vars.RDKM_BOT_EMAIL }}
         run: |
           cd meta_repo
           python3 ../tools/build_health_check_workflow_scripts/auto_pr_generation_meta.py
