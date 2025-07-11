@@ -241,7 +241,6 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
             pkgrev_pv_field = f'PV:pn-{comp}'
             # pkgrev_file: {pkgrev_file}, pkgrev_pv_field: {pkgrev_pv_field}
-        # ...existing code...
         else:
             print(f"[DEBUG] Skipping repo {repo_name} (not handled)")
             continue
@@ -252,11 +251,7 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             with open(bb_file, 'r', newline='') as f:
                 old_lines = f.readlines()
             file_changed = False
-            if not tag:
-                print(f"[WARNING] No tag found that contains commit {sha} for repo {repo_name}. Setting tag as None.")
-                tag_to_use = None
-            else:
-                tag_to_use = tag
+            tag_to_use = tag
             new_lines = []
             for idx, line in enumerate(old_lines):
                 line_stripped = line.strip()
@@ -326,11 +321,7 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
 
         # --- DEBUG: Print comp, pkgrev_pv_field, and tag for every update attempt ---
         # Informational: update_bb_and_pkgrev status
-        if not tag:
-            print(f"No tag found that contains commit {sha} for repo {repo_name}. Setting PV to None for {pkgrev_pv_field} in {pkgrev_file}.")
-            tag_to_use = None
-        else:
-            tag_to_use = tag
+        tag_to_use = tag
         if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
             # Opening pkgrev_file: {pkgrev_file}
             with open(pkgrev_file, 'r', newline='') as f:
@@ -378,8 +369,6 @@ def build_pr_list_description(prs):
 #Commit the changes to the manifest files and push to the feature branch
 def commit_and_push(manifest_repo_path, commit_message):
     repo = Repo(manifest_repo_path)
-    print(f"[DEBUG] commit_and_push: current branch is {repo.active_branch.name}")
-    print(f"[DEBUG] commit_and_push: git status before commit:\n" + repo.git.status())
     if repo.is_dirty():
         # Ensure git user.name and user.email are set
         config_writer = repo.config_writer()
@@ -389,15 +378,18 @@ def commit_and_push(manifest_repo_path, commit_message):
         except Exception:
             user_name = None
             user_email = None
+        # Set from environment only, do not hardcode defaults
         if not user_name:
-            config_writer.set_value('user', 'name', os.environ.get('GIT_COMMITTER_NAME', 'github-actions[bot]'))
+            committer_name = os.environ.get('GIT_COMMITTER_NAME')
+            if committer_name:
+                config_writer.set_value('user', 'name', committer_name)
         if not user_email:
-            config_writer.set_value('user', 'email', os.environ.get('GIT_COMMITTER_EMAIL', 'github-actions[bot]@users.noreply.github.com'))
+            committer_email = os.environ.get('GIT_COMMITTER_EMAIL')
+            if committer_email:
+                config_writer.set_value('user', 'email', committer_email)
         config_writer.release()
         repo.git.commit('-m', commit_message)
-        print(f"[DEBUG] commit_and_push: git log after commit:\n" + repo.git.log('-n', '2', '--oneline'))
         repo.git.push('origin', repo.active_branch.name)
-        print(f"[DEBUG] commit_and_push: git status after push:\n" + repo.git.status())
     else:
         print("No changes to commit.")
 
@@ -756,6 +748,5 @@ def main():
                 build_pr_list_description(updates)
             )
             create_summary_issue(github_token, meta_repo_name, issue_title, issue_body)
-# ...existing code...
 if __name__ == '__main__':
     main()
