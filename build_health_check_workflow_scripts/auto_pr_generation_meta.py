@@ -646,6 +646,8 @@ def main():
                 if os.path.exists(pkgrev_file):
                     comp = updates[0]['repo'].split('/')[-1]
                     pv_field = f'PV:pn-{comp}'
+                    # Print current branch name before reading old_lines
+                    print(f"[DEBUG] Current branch before reading pkgrev_file: {support_repo.active_branch.name}")
                     with open(pkgrev_file, 'r', newline='') as f:
                         old_lines = f.readlines()
                     # Now checkout branch after reading old_lines
