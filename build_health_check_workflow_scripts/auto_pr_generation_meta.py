@@ -279,11 +279,10 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             tag_to_use = tag
             with open(pkgrev_file, 'r', newline='') as f:
                 old_lines = f.readlines()
-            new_lines = old_lines.copy()
+            new_lines = []
             file_changed = False
             found_pv = False
             for idx, line in enumerate(old_lines):
-                print("pkgrev_pv_field:", pkgrev_pv_field)
                 if line.strip().startswith(f'{pkgrev_pv_field} ='):
                     print("Updating existing PV field")
                     new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
