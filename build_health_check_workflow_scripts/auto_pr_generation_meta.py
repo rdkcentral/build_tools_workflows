@@ -641,7 +641,6 @@ def main():
         if os.path.isdir(generic_support_path):
             try:
                 support_repo = Repo(generic_support_path)
-                create_or_checkout_branch(support_repo, support_branch, base_branch)
                 # Only update PV field for the current merged component in generic-pkgrev.inc
                 pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
                 if os.path.exists(pkgrev_file):
@@ -649,6 +648,8 @@ def main():
                     pv_field = f'PV:pn-{comp}'
                     with open(pkgrev_file, 'r', newline='') as f:
                         old_lines = f.readlines()
+                    # Now checkout branch after reading old_lines
+                    create_or_checkout_branch(support_repo, support_branch, base_branch)
                     new_lines = []
                     found_pv = False
                     for line in old_lines:
