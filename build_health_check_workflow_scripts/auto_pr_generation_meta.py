@@ -195,7 +195,6 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             print(f"[DEBUG] Could not open support repo at {support_repo_path}: {e}")
     changed = False
     support_changed = False
-    # --- FIX: ensure pv_updates accumulates all components, even if script is run multiple times ---
     pkgrev_file = None
     for root, dirs, files in os.walk(generic_support_path):
         for f in files:
@@ -206,61 +205,118 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             break
     if not pkgrev_file:
         print(f"[WARNING] generic-pkgrev.inc file not found in {generic_support_path}")
-
-    # --- NEW: Load all existing PV fields from pkgrev_file before updating ---
-    existing_pv_fields = {}
-    if pkgrev_file and os.path.exists(pkgrev_file):
-        with open(pkgrev_file, 'r', newline='') as f:
-            for line in f:
-                m = re.match(r'^(PV:pn-[\w-]+)\s*=\s*"([^"]*)"', line.strip())
-                if m:
-                    existing_pv_fields[m.group(1)] = m.group(2)
-
+    # --- FIX: accumulate all PV changes and write once at the end ---
     pv_updates = {}
     for update in updates:
         repo_name = update['repo']
         sha = update['sha']
         tag = update.get('tag')
+        print(f"[DEBUG] Processing update: repo={repo_name}, sha={sha}, tag={tag}")
         bb_file = None
         comp = None
         pkgrev_pv_field = None
         if repo_name.startswith('rdkcentral/entservices-'):
             comp = repo_name.split('/')[-1]
+            for root, dirs, files in os.walk(manifest_repo_path):
+                for f in files:
+                    if f == f"{comp}.bb":
+                        bb_file = os.path.join(root, f)
+                        break
+                if bb_file:
+                    break
             pkgrev_pv_field = f'PV:pn-{comp}'
-        # Always update PV field for all components in updates
-        if pkgrev_pv_field:
-            pv_updates[pkgrev_pv_field] = tag  # tag may be None
-    # --- Merge previous PV fields with new updates ---
-    # If a PV field is not in updates, preserve its previous value
-    merged_pv_fields = existing_pv_fields.copy()
-    merged_pv_fields.update(pv_updates)
-
-    # Now, update pkgrev_file once with all merged PV changes
-    if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
-        print(f"[DEBUG] Writing all PV fields in {pkgrev_file}: {merged_pv_fields}")
-        # Rebuild file with all PV fields (preserving order for existing fields, appending new ones)
-        with open(pkgrev_file, 'r', newline='') as f:
-            old_lines = f.readlines()
-        new_lines = []
-        seen_fields = set()
-        for line in old_lines:
-            m = re.match(r'^(PV:pn-[\w-]+)\s*=\s*"([^"]*)"', line.strip())
-            if m:
-                pv_field = m.group(1)
-                if pv_field in merged_pv_fields:
-                    new_value = merged_pv_fields[pv_field]
-                    print(f"[SUPPORT-DBG] PKGREV: Updating {pv_field} from {m.group(2)} to {new_value}")
-                    new_lines.append(f'{pv_field} = "{new_value}"\n')
-                    seen_fields.add(pv_field)
+        # Update .bb file SRCREV and PV in meta layer
+        if bb_file and os.path.exists(bb_file):
+            # Opening bb_file: {bb_file}
+            with open(bb_file, 'r', newline='') as f:
+                old_lines = f.readlines()
+            file_changed = False
+            tag_to_use = tag
+            new_lines = []
+            for idx, line in enumerate(old_lines):
+                line_stripped = line.strip()
+                # bb_file line {idx}: {line_stripped}
+                # Match SRCREV, SRCREV ?=, or SRCREV_<component> = (component always lower case)
+                if (
+                    line_stripped.startswith('SRCREV =') or
+                    line_stripped.startswith('SRCREV ?=') or
+                    (line_stripped.startswith(f'SRCREV_{comp} =') if comp else False)
+                ):
+                    # Only update if value is different
+                    current_value = re.findall(r'"([^"]+)"', line_stripped)
+                    if current_value and current_value[0] == sha:
+                        new_lines.append(line)
+                    else:
+                        if 'SRCREV ?=' in line_stripped:
+                            new_lines.append(f'SRCREV ?= "{sha}"\n')
+                        elif f'SRCREV_{comp} =' in line_stripped:
+                            new_lines.append(f'SRCREV_{comp} = "{sha}"\n')
+                        else:
+                            new_lines.append(f'SRCREV = "{sha}"\n')
+                        file_changed = True
+                elif line_stripped.startswith('PV ?='):
+                    # Only update if value is different
+                    current_value = re.findall(r'"([^"]+)"', line_stripped)
+                    if current_value and current_value[0] == str(tag_to_use):
+                        new_lines.append(line)
+                    else:
+                        new_lines.append(f'PV ?= "{tag_to_use}"\n')
+                        file_changed = True
                 else:
                     new_lines.append(line)
+            # Print diff for debugging
+            # Diff and content change info removed
+            # Write only if changed
+            if old_lines != new_lines:
+                with open(bb_file, 'w', newline='\n') as f:
+                    f.writelines(new_lines)
+                repo.git.add(bb_file)
+                changed = True
+                print(f"Updated {bb_file}")
             else:
+                print(f"No change needed for {bb_file}")
+        else:
+            print(f"[DEBUG] .bb file does not exist: {bb_file}")
+
+        # Instead of updating pkgrev_file immediately, accumulate intended PV changes
+        if pkgrev_pv_field:
+            pv_updates[pkgrev_pv_field] = tag  # tag may be None
+
+    # Now, update pkgrev_file once with all PV changes
+    if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
+        print(f"[DEBUG] Updating all PV fields in {pkgrev_file}: {pv_updates}")
+        with open(pkgrev_file, 'r', newline='') as f:
+            old_lines = f.readlines()
+        print(f"[SUPPORT-DBG] PKGREV: Loaded {len(old_lines)} lines from {pkgrev_file}")
+        print(f"[SUPPORT-DBG] PKGREV: pv_updates to apply: {pv_updates}")
+        new_lines = []
+        updated_fields = set()
+        for line_num, line in enumerate(old_lines):
+            updated = False
+            for pv_field, pv_value in pv_updates.items():
+                if line.strip().startswith(f'{pv_field} ='):
+                    current_value = re.findall(r'"([^"]+)"', line.strip())
+                    print(f"[SUPPORT-DBG] PKGREV: Line {line_num}: Found field {pv_field} in file.")
+                    print(f"[SUPPORT-DBG] PKGREV: Line {line_num}: Current value: {current_value}, New value: {pv_value}")
+                    if current_value and current_value[0] == str(pv_value):
+                        new_lines.append(line)
+                        print(f"[SUPPORT-DBG] PKGREV: Line {line_num}: No update needed for {pv_field}.")
+                    else:
+                        print(f"[SUPPORT-DBG] PKGREV: Line {line_num}: Updating {pv_field} from {current_value[0] if current_value else 'None'} to {pv_value}.")
+                        new_lines.append(f'{pv_field} = "{pv_value}"\n')
+                    updated_fields.add(pv_field)
+                    updated = True
+                    break
+            if not updated:
                 new_lines.append(line)
         # Add any new PV fields not present in the file
-        for pv_field, pv_value in merged_pv_fields.items():
-            if pv_field not in seen_fields:
-                print(f"[SUPPORT-DBG] PKGREV: Adding new field {pv_field} with value {pv_value}")
+        for pv_field, pv_value in pv_updates.items():
+            if pv_field not in updated_fields:
+                print(f"[SUPPORT-DBG] PKGREV: Adding new field {pv_field} with value {pv_value}.")
                 new_lines.append(f'{pv_field} = "{pv_value}"\n')
+        print(f"[SUPPORT-DBG] PKGREV: old_lines == new_lines? {old_lines == new_lines}")
+        print(f"[SUPPORT-DBG] PKGREV: updated_fields: {updated_fields}")
+        print(f"[SUPPORT-DBG] PKGREV: pv_updates keys: {list(pv_updates.keys())}")
         if old_lines != new_lines:
             print(f"[SUPPORT-DBG] PKGREV: Writing updated PKGREV file {pkgrev_file}.")
             with open(pkgrev_file, 'w', newline='\n') as f:
@@ -270,6 +326,11 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             print(f"[SUPPORT-DBG] PKGREV: Staged {pkgrev_file} for commit.")
         else:
             print(f"[SUPPORT-DBG] PKGREV: No changes detected in {pkgrev_file}.")
+            print(f"[SUPPORT-DBG] PKGREV: Final PV values in file:")
+            for line in new_lines:
+                m = re.match(r'^(PV:pn-[\w-]+)\s*=\s*"([^"]*)"', line.strip())
+                if m:
+                    print(f"[SUPPORT-DBG] PKGREV: {m.group(1)} = {m.group(2)}")
     elif pkgrev_file:
         print(f"[SUPPORT-DBG] PKGREV: pkgrev_file exists but support_repo not found: {pkgrev_file}")
     else:
@@ -316,6 +377,10 @@ def commit_and_push(manifest_repo_path, commit_message):
     else:
         print(f"[DBG] Current branch before commit: {repo.active_branch.name}")
         print("No changes to commit.")
+        print("[DBG] Git status output:")
+        print(repo.git.status())
+        print("[DBG] Git diff output:")
+        print(repo.git.diff())
         print(f"[DBG] Branch after commit: {repo.active_branch.name}")
 
 #Create a new PR for the updated manifest files
