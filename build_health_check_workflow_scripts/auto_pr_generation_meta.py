@@ -207,16 +207,35 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         pkgrev_pv_field = None
         if repo_name.startswith('rdkcentral/entservices-'):
             comp = repo_name.split('/')[-1]
-            # Determine .bb file location for entservices-apis and other entservices-* components
-            if comp == 'entservices-apis':
-                bb_file = os.path.join(manifest_repo_path, 'recipes-extended', 'wpe-framework', 'entservices-apis.bb')
-            else:
-                bb_file = os.path.join(manifest_repo_path, 'recipes-extended', 'entservices', f'{comp}.bb')
-            # For support layer PR (if support .bb files exist, keep logic, else skip)
-            support_entservices_dir = os.path.join(generic_support_path, 'recipes-extended', 'entservices')
-            support_bb_file = os.path.join(support_entservices_dir, f'{comp}.bb')
-            pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
-            pkgrev_pv_field = f'PV:pn-{comp}'
+            # Update PV in support layer for all entservices-* components
+            if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
+                tag_to_use = tag
+                with open(pkgrev_file, 'r', newline='') as f:
+                    old_lines = f.readlines()
+                file_changed = False
+                found_pv = False
+                new_lines = []
+                for idx, line in enumerate(old_lines):
+                    if line.strip().startswith(f'{pkgrev_pv_field} ='):
+                        new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
+                        file_changed = True
+                        found_pv = True
+                    else:
+                        new_lines.append(line)
+                if not found_pv:
+                    print(f"PV field {pkgrev_pv_field} not found in {pkgrev_file}, appending new line.")
+                    new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
+                    file_changed = True
+                if old_lines != new_lines:
+                    with open(pkgrev_file, 'w', newline='\n') as f:
+                        f.writelines(new_lines)
+                    support_repo.git.add(pkgrev_file)
+                    support_changed = True
+                    print(f"Updated {pkgrev_file}")
+                else:
+                    print(f"No change needed for {pkgrev_file}")
+            elif pkgrev_file:
+                print(f"pkgrev_file does not exist or support_repo not found: {pkgrev_file}")
         else:
             print(f"[DEBUG] Skipping repo {repo_name} (not handled)")
             continue
@@ -395,6 +414,12 @@ def create_pull_request(github_token, repo_name, head_branch, base_branch, title
 def create_summary_issue(github_token, repo_name, issue_title, issue_body):
     g = Github(github_token)
     repo = g.get_repo(repo_name)
+    # Check for existing open issue with the same title
+    for issue in repo.get_issues(state='open'):
+        if issue.title == issue_title:
+            print(f"Summary issue already exists: {issue.html_url}")
+            return issue
+    # If not found, create new
     issue = repo.create_issue(title=issue_title, body=issue_body)
     print(f"Issue created: {issue.html_url}")
     return issue
