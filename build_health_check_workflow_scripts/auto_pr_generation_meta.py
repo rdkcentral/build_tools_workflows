@@ -291,8 +291,15 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             new_lines = []
             for idx, line in enumerate(old_lines):
                 if line.strip().startswith(f'{pkgrev_pv_field} ='):
-                    new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
-                    file_changed = True
+                    # Only update if value is different
+                    current_value = re.findall(r'"([^"]+)"', line.strip())
+                    if current_value and current_value[0] == str(tag_to_use):
+                        new_lines.append(line)
+                        print(f"[DEBUG] PV field {pkgrev_pv_field} already set to {tag_to_use}, no update needed.")
+                    else:
+                        new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
+                        file_changed = True
+                        print(f"[DEBUG] PV field {pkgrev_pv_field} updated from {current_value[0] if current_value else 'None'} to {tag_to_use}.")
                     found_pv = True
                 else:
                     new_lines.append(line)
