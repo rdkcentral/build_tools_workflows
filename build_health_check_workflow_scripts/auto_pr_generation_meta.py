@@ -571,10 +571,10 @@ def main():
     updates = []
     for pr in prs:
         tag = get_tag_for_sha(github_token, pr['repo'], pr['sha'])
-        print(f"[DEBUG] Tag for {pr['repo']} at {pr['sha']}: {tag}")
         if not tag:
             print(f"[WARNING] No tag found that contains commit {pr['sha']} for repo {pr['repo']}. Setting tag as None.")
             tag = None
+        print(f"[DEBUG] Tag for {pr['repo']} at {pr['sha']}: {tag}")
         updates.append({'repo': pr['repo'], 'sha': pr['sha'], 'tag': tag})
 
     print("Updates to be pushed to topic branch: {}".format(updates))
@@ -649,6 +649,9 @@ def main():
 
         # Read old pkgrev_file lines
         with open(pkgrev_file, 'r', newline='') as f:
+            print(f"[DEBUG] Reading pkgrev_file: {pkgrev_file}")
+            #print the lines for debugging
+            print(f"[DEBUG] Old pkgrev_file lines: {f.readlines()}")
             old_lines = f.readlines()
         new_lines = old_lines.copy()
         changed = False
