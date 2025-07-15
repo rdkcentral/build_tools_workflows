@@ -200,45 +200,30 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         sha = update['sha']
         tag = update.get('tag')
         print(f"[DEBUG] Processing update: repo={repo_name}, sha={sha}, tag={tag}")
-        # Determine .bb paths (meta and support layer)
         bb_file = None
-        support_bb_file = None
         pkgrev_file = None
         pkgrev_pv_field = None
+        comp = None
         if repo_name.startswith('rdkcentral/entservices-'):
             comp = repo_name.split('/')[-1]
-            # Update PV in support layer for all entservices-* components
-            if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
-                tag_to_use = tag
-                with open(pkgrev_file, 'r', newline='') as f:
-                    old_lines = f.readlines()
-                file_changed = False
-                found_pv = False
-                new_lines = []
-                for idx, line in enumerate(old_lines):
-                    if line.strip().startswith(f'{pkgrev_pv_field} ='):
-                        new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
-                        file_changed = True
-                        found_pv = True
-                    else:
-                        new_lines.append(line)
-                if not found_pv:
-                    print(f"PV field {pkgrev_pv_field} not found in {pkgrev_file}, appending new line.")
-                    new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
-                    file_changed = True
-                if old_lines != new_lines:
-                    with open(pkgrev_file, 'w', newline='\n') as f:
-                        f.writelines(new_lines)
-                    support_repo.git.add(pkgrev_file)
-                    support_changed = True
-                    print(f"Updated {pkgrev_file}")
-                else:
-                    print(f"No change needed for {pkgrev_file}")
-            elif pkgrev_file:
-                print(f"pkgrev_file does not exist or support_repo not found: {pkgrev_file}")
-        else:
-            print(f"[DEBUG] Skipping repo {repo_name} (not handled)")
-            continue
+            # Find .bb file
+            for root, dirs, files in os.walk(manifest_repo_path):
+                for f in files:
+                    if f == f"{comp}.bb":
+                        bb_file = os.path.join(root, f)
+                        break
+                if bb_file:
+                    break
+            # Find pkgrev.inc file and set PV field as PV:PN-<COMPONENT>
+            pkgrev_file_name = f"{comp}-pkgrev.inc"
+            for root, dirs, files in os.walk(generic_support_path):
+                for f in files:
+                    if f == pkgrev_file_name:
+                        pkgrev_file = os.path.join(root, f)
+                        pkgrev_pv_field = f'PV:PN-{comp.upper()}'
+                        break
+                if pkgrev_file:
+                    break
         # Informational: bb_file and pkgrev_file
         # Update .bb file SRCREV and PV in meta layer
         if bb_file and os.path.exists(bb_file):
@@ -286,8 +271,8 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         else:
             print(f"[DEBUG] .bb file does not exist: {bb_file}")
 
-        # Only update PV in support layer for entservices-apis
-        if comp == 'entservices-apis' and pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
+        # Update PV:PN-<COMPONENT> in pkgrev.inc for all components
+        if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
             tag_to_use = tag
             with open(pkgrev_file, 'r', newline='') as f:
                 old_lines = f.readlines()
@@ -305,42 +290,6 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                 print(f"PV field {pkgrev_pv_field} not found in {pkgrev_file}, appending new line.")
                 new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
                 file_changed = True
-            if old_lines != new_lines:
-                with open(pkgrev_file, 'w', newline='\n') as f:
-                    f.writelines(new_lines)
-                support_repo.git.add(pkgrev_file)
-                support_changed = True
-                print(f"Updated {pkgrev_file}")
-            else:
-                print(f"No change needed for {pkgrev_file}")
-        elif comp == 'entservices-apis' and pkgrev_file:
-            print(f"pkgrev_file does not exist or support_repo not found: {pkgrev_file}")
-
-        # --- DEBUG: Print comp, pkgrev_pv_field, and tag for every update attempt ---
-        # Informational: update_bb_and_pkgrev status
-        tag_to_use = tag
-        if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
-            # Opening pkgrev_file: {pkgrev_file}
-            with open(pkgrev_file, 'r', newline='') as f:
-                old_lines = f.readlines()
-            file_changed = False
-            found_pv = False
-            new_lines = []
-            for idx, line in enumerate(old_lines):
-                # pkgrev_file line {idx}: {line.strip()}
-                if line.strip().startswith(f'{pkgrev_pv_field} ='):
-                    # Updating PV in {pkgrev_file} to {tag_to_use} (line {idx})
-                    new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
-                    file_changed = True
-                    found_pv = True
-                else:
-                    new_lines.append(line)
-            if not found_pv:
-                print(f"PV field {pkgrev_pv_field} not found in {pkgrev_file}, appending new line.")
-                new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
-                file_changed = True
-            # Print diff for debugging
-            # Diff and content change info removed
             if old_lines != new_lines:
                 with open(pkgrev_file, 'w', newline='\n') as f:
                     f.writelines(new_lines)
