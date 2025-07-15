@@ -714,45 +714,41 @@ def main():
         old_lines = []
         previous_value = None
         found_pv = False
+        new_lines = []
+        pv_updated = False
         if os.path.exists(pkgrev_file):
             with open(pkgrev_file, 'r', newline='') as f:
                 old_lines = f.readlines()
-            # Extract previous PV value before branch checkout
+            # Extract previous PV value before any branch checkout
             for line in old_lines:
                 pv_match = re.match(rf'^{re.escape(pv_field)}\s*=\s*"([^"]+)"', line.strip())
                 if pv_match:
                     previous_value = pv_match.group(1)
                     found_pv = True
-                    break
-        if os.path.isdir(generic_support_path):
+                # Build new_lines for update
+                if pv_match:
+                    new_lines.append(f'{pv_field} = "{updates[0]["tag"]}"\n')
+                    pv_updated = True
+                else:
+                    new_lines.append(line)
+            if not pv_updated:
+                new_lines.append(f'{pv_field} = "{updates[0]["tag"]}"\n')
+        # Only checkout and update if changes are needed
+        if old_lines and old_lines != new_lines and os.path.isdir(generic_support_path):
             try:
                 support_repo = Repo(generic_support_path)
                 create_or_checkout_branch(support_repo, support_branch, base_branch)
-                # Now perform the update after branch checkout
-                if os.path.exists(pkgrev_file):
-                    new_lines = []
-                    pv_updated = False
-                    for line in old_lines:
-                        pv_match = re.match(rf'^{re.escape(pv_field)}\s*=\s*"([^"]+)"', line.strip())
-                        if pv_match:
-                            new_lines.append(f'{pv_field} = "{updates[0]["tag"]}"\n')
-                            pv_updated = True
-                        else:
-                            new_lines.append(line)
-                    if not pv_updated:
-                        new_lines.append(f'{pv_field} = "{updates[0]["tag"]}"\n')
-                    if old_lines != new_lines:
-                        with open(pkgrev_file, 'w', newline='\n') as f:
-                            f.writelines(new_lines)
-                        support_repo.git.add(pkgrev_file)
-                        support_repo.git.commit('-m', f"Update PV for {comp} for {ticket_number} PR {pr_number}")
-                        support_repo.git.push('origin', support_branch)
-                        print(f"[DEBUG] Updated PV field for {comp} in {pkgrev_file}. Previous value: '{previous_value}', new value: '{updates[0]["tag"]}'")
-                    else:
-                        print(f"[DEBUG] No PV changes needed for {pkgrev_file}. Previous value: '{previous_value}', new value: '{updates[0]["tag"]}'")
+                with open(pkgrev_file, 'w', newline='\n') as f:
+                    f.writelines(new_lines)
+                support_repo.git.add(pkgrev_file)
+                support_repo.git.commit('-m', f"Update PV for {comp} for {ticket_number} PR {pr_number}")
+                support_repo.git.push('origin', support_branch)
+                print(f"[DEBUG] Updated PV field for {comp} in {pkgrev_file}. Previous value: '{previous_value}', new value: '{updates[0]["tag"]}'")
             except Exception as e:
                 print(f"[DEBUG] Could not open or update support repo at {generic_support_path}: {e}")
-        changes_made, support_changed, _ = update_bb_and_pkgrev(meta_repo_path, generic_support_path, updates)
+        elif old_lines:
+            print(f"[DEBUG] No PV changes needed for {pkgrev_file}. Previous value: '{previous_value}', new value: '{updates[0]["tag"]}'")
+        changes_made, support_changed, support_repo = update_bb_and_pkgrev(meta_repo_path, generic_support_path, updates)
         print(f"[DEBUG] changes_made: {changes_made}, support_changed: {support_changed}")
         if changes_made:
             commit_and_push(
