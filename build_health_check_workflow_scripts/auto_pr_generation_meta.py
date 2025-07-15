@@ -195,31 +195,37 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             print(f"[DEBUG] Could not open support repo at {support_repo_path}: {e}")
     changed = False
     support_changed = False
+    pkgrev_file = None
+    # Find generic-pkgrev.inc once
+    for root, dirs, files in os.walk(generic_support_path):
+        for f in files:
+            if f == "generic-pkgrev.inc":
+                pkgrev_file = os.path.join(root, f)
+                break
+        if pkgrev_file:
+            break
+    if not pkgrev_file:
+        print(f"[WARNING] generic-pkgrev.inc file not found in {generic_support_path}")
     for update in updates:
         repo_name = update['repo']
         sha = update['sha']
         tag = update.get('tag')
         print(f"[DEBUG] Processing update: repo={repo_name}, sha={sha}, tag={tag}")
-        # Determine .bb paths (meta and support layer)
         bb_file = None
-        support_bb_file = None
-        pkgrev_file = None
+        comp = None
         pkgrev_pv_field = None
         if repo_name.startswith('rdkcentral/entservices-'):
             comp = repo_name.split('/')[-1]
-            # Determine .bb file location for entservices-apis and other entservices-* components
-            if comp == 'entservices-apis':
-                bb_file = os.path.join(manifest_repo_path, 'recipes-extended', 'wpe-framework', 'entservices-apis.bb')
-            else:
-                bb_file = os.path.join(manifest_repo_path, 'recipes-extended', 'entservices', f'{comp}.bb')
-            # For support layer PR (if support .bb files exist, keep logic, else skip)
-            support_entservices_dir = os.path.join(generic_support_path, 'recipes-extended', 'entservices')
-            support_bb_file = os.path.join(support_entservices_dir, f'{comp}.bb')
-            pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
+            # Find .bb file
+            for root, dirs, files in os.walk(manifest_repo_path):
+                for f in files:
+                    if f == f"{comp}.bb":
+                        bb_file = os.path.join(root, f)
+                        break
+                if bb_file:
+                    break
+            # Set PV field for generic-pkgrev.inc
             pkgrev_pv_field = f'PV:pn-{comp}'
-        else:
-            print(f"[DEBUG] Skipping repo {repo_name} (not handled)")
-            continue
         # Informational: bb_file and pkgrev_file
         # Update .bb file SRCREV and PV in meta layer
         if bb_file and os.path.exists(bb_file):
@@ -267,60 +273,17 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         else:
             print(f"[DEBUG] .bb file does not exist: {bb_file}")
 
-
-        # Update PV in support layer for all entservices-* components
-        if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
+        # Update PV:pn-<comp_name> in generic-pkgrev.inc for all components
+        if pkgrev_file and os.path.exists(pkgrev_file) and support_repo and pkgrev_pv_field:
+            print(f"[DEBUG] Attempting to update PV field {pkgrev_pv_field} in {pkgrev_file}")
             tag_to_use = tag
-            with open(pkgrev_file, 'r', newline='') as f:
-                old_lines = f.readlines()
-            file_changed = False
-            found_pv = False
-            previous_value = None
-            # Extract previous value from original file content
-            for line in old_lines:
-                print(f"[DEBUG] pkgrev_file line: {line.strip()}")
-                pv_match = re.match(rf'^{re.escape(pkgrev_pv_field)}\s*=\s*"([^"]+)"', line.strip())
-                if pv_match:
-                    previous_value = pv_match.group(1)
-                    print(f"[DEBUG] Found previous PV value: {previous_value}")
-                    found_pv = True
-                    break
-            # Now build new_lines only after extracting previous_value
-            if found_pv:
-                if previous_value != str(tag_to_use):
-                    new_lines = []
-                    for line in old_lines:
-                        # Replace only the matching PV field line
-                        pv_match = re.match(rf'^{re.escape(pkgrev_pv_field)}\s*=\s*"([^"]+)"', line.strip())
-                        if pv_match:
-                            new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
-                        else:
-                            new_lines.append(line)
-                    with open(pkgrev_file, 'w', newline='\n') as f:
-                        f.writelines(new_lines)
-                    support_repo.git.add(pkgrev_file)
-                    support_changed = True
-                    print(f"Updated {pkgrev_file}. Previous value: '{previous_value}', new value: '{tag_to_use}'")
-                else:
-                    print(f"No change needed for {pkgrev_file}. Reason: PV field for {pkgrev_pv_field} already matches the desired value. Previous value: '{previous_value}', new value: '{tag_to_use}'")
-            else:
-                print(f"PV field {pkgrev_pv_field} not found in {pkgrev_file}. No update performed.")
-        elif pkgrev_file:
-            print(f"pkgrev_file does not exist or support_repo not found: {pkgrev_file}")
-        # --- DEBUG: Print comp, pkgrev_pv_field, and tag for every update attempt ---
-        # Informational: update_bb_and_pkgrev status
-        tag_to_use = tag
-        if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
-            # Opening pkgrev_file: {pkgrev_file}
             with open(pkgrev_file, 'r', newline='') as f:
                 old_lines = f.readlines()
             file_changed = False
             found_pv = False
             new_lines = []
             for idx, line in enumerate(old_lines):
-                # pkgrev_file line {idx}: {line.strip()}
                 if line.strip().startswith(f'{pkgrev_pv_field} ='):
-                    # Updating PV in {pkgrev_file} to {tag_to_use} (line {idx})
                     new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
                     file_changed = True
                     found_pv = True
@@ -330,8 +293,6 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                 print(f"PV field {pkgrev_pv_field} not found in {pkgrev_file}, appending new line.")
                 new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
                 file_changed = True
-            # Print diff for debugging
-            # Diff and content change info removed
             if old_lines != new_lines:
                 with open(pkgrev_file, 'w', newline='\n') as f:
                     f.writelines(new_lines)
@@ -341,23 +302,10 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             else:
                 print(f"No change needed for {pkgrev_file}")
         elif pkgrev_file:
-            print(f"pkgrev_file does not exist or support_repo not found: {pkgrev_file}")
+            print(f"[WARNING] pkgrev_file exists but support_repo not found: {pkgrev_file}")
+        else:
+            print(f"[WARNING] generic-pkgrev.inc file not found, skipping support layer update.")
     print(f"update_bb_and_pkgrev completed")
-    #print the changed status and diff 
-    if not support_changed:
-        print("[DEBUG] No changes made to support layer.")
-    else:
-        print(f"[DEBUG] Changes made to support layer in the branch: {support_repo.active_branch.name}")
-        #print the new lines in the support layer
-        for line in new_lines:
-            print(f"[DEBUG] {line.strip()}")
-        # --- DEBUG: Print the diff of support layer changes for debugging ---
-        if old_lines != new_lines:
-            print("[DEBUG] Support layer changes detected:")
-            for old_line, new_line in zip(old_lines, new_lines):
-                if old_line != new_line:
-                    print(f"[DEBUG] - {old_line.strip()} -> {new_line.strip()}")
-        # Print the diff of support layer changes for debugging
     return changed, support_changed, support_repo
 #Build the PR list description
 def build_pr_list_description(prs):
@@ -420,6 +368,12 @@ def create_pull_request(github_token, repo_name, head_branch, base_branch, title
 def create_summary_issue(github_token, repo_name, issue_title, issue_body):
     g = Github(github_token)
     repo = g.get_repo(repo_name)
+    # Check for existing open issue with the same title
+    for issue in repo.get_issues(state='open'):
+        if issue.title == issue_title:
+            print(f"Summary issue already exists: {issue.html_url}")
+            return issue
+    # If not found, create new
     issue = repo.create_issue(title=issue_title, body=issue_body)
     print(f"Issue created: {issue.html_url}")
     return issue
@@ -628,160 +582,122 @@ def main():
     meta_pr_obj = None
     support_pr_obj = None
     comp_name = updates[0]['repo'].split('/')[-1] if updates else "unknown"
-    auto_pr_links = []
-    # --- Refactored PV update logic for support layer ---
+    # --- Refactored support layer PV update logic ---
+    # Branch setup
     if issue_number:
-        # Issue-linked PR: update PV for only the merged component in the shared topic branch
         feature_branch = f"topic/auto-{ticket_number.lower()}-issue-{issue_number}"
-        meta_pr_title = f"[Auto] Update meta layer for {ticket_number}"
-        meta_pr_description = build_pr_list_description(updates)
-        create_or_checkout_branch(Repo(meta_repo_path), feature_branch, base_branch)
         support_branch = f"topic/auto-support-{ticket_number.lower()}-issue-{issue_number}"
-        support_repo = None
-        if os.path.isdir(generic_support_path):
-            try:
-                support_repo = Repo(generic_support_path)
-                # Only update PV field for the current merged component in generic-pkgrev.inc
-                pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
-                if os.path.exists(pkgrev_file):
-                    comp = updates[0]['repo'].split('/')[-1]
-                    pv_field = f'PV:pn-{comp}'
-                    # Print current branch name before reading old_lines
-                    print(f"[DEBUG] Current branch before reading pkgrev_file: {support_repo.active_branch.name}")
-                    with open(pkgrev_file, 'r', newline='') as f:
-                        old_lines = f.readlines()
-                    # Now checkout branch after reading old_lines
-                    create_or_checkout_branch(support_repo, support_branch, base_branch)
-                    new_lines = []
-                    found_pv = False
-                    for line in old_lines:
-                        if line.strip().startswith(f'{pv_field} ='):
-                            new_lines.append(f'{pv_field} = "{updates[0]['tag']}"\n')
-                            found_pv = True
-                        else:
-                            new_lines.append(line)
-                    if not found_pv:
-                        new_lines.append(f'{pv_field} = "{updates[0]['tag']}"\n')
-                    if old_lines != new_lines:
-                        with open(pkgrev_file, 'w', newline='\n') as f:
-                            f.writelines(new_lines)
-                        support_repo.git.add(pkgrev_file)
-                        support_repo.git.commit('-m', f"Update PV for {comp} for {ticket_number} issue {issue_number}")
-                        support_repo.git.push('origin', support_branch)
-                        print(f"[DEBUG] Updated PV field for {comp} in {pkgrev_file}")
-                    else:
-                        print(f"[DEBUG] No PV changes needed for {pkgrev_file}")
-            except Exception as e:
-                print(f"[DEBUG] Could not open or update support repo at {generic_support_path}: {e}")
-        changes_made, support_changed, _ = update_bb_and_pkgrev(meta_repo_path, generic_support_path, updates)
-        if changes_made:
-            commit_and_push(
-                meta_repo_path,
-                "Update meta and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
-            )
-            meta_pr_obj = create_pull_request(
-                github_token,
-                meta_repo_name,
-                feature_branch,
-                base_branch,
-                meta_pr_title,
-                meta_pr_description
-            )
+    else:
+        feature_branch = f"topic/auto-{ticket_number.lower()}-pr-{pr_number}"
+        support_branch = f"topic/auto-support-{ticket_number.lower()}-pr-{pr_number}"
+
+    meta_pr_title = f"[Auto] Update meta layer for {ticket_number}" + (f" (PR {pr_number})" if not issue_number else "")
+    meta_pr_description = build_pr_list_description(updates)
+    create_or_checkout_branch(Repo(meta_repo_path), feature_branch, base_branch)
+
+    # --- Update meta layer as before ---
+    changes_made, _, _ = update_bb_and_pkgrev(meta_repo_path, generic_support_path, updates)
+    if changes_made:
+        commit_and_push(
+            meta_repo_path,
+            "Update meta and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
+        )
+        meta_pr_obj = create_pull_request(
+            github_token,
+            meta_repo_name,
+            feature_branch,
+            base_branch,
+            meta_pr_title,
+            meta_pr_description
+        )
+    else:
+        print("[DEBUG] No changes detected, PR will not be created for meta layer.")
+
+    # --- Support layer PV update logic ---
+    support_repo = None
+    if os.path.isdir(generic_support_path):
+        try:
+            support_repo = Repo(generic_support_path)
+        except Exception as e:
+            print(f"[DEBUG] Could not open support repo at {generic_support_path}: {e}")
+
+    pkgrev_file = None
+    # Find generic-pkgrev.inc once
+    for root, dirs, files in os.walk(generic_support_path):
+        for f in files:
+            if f == "generic-pkgrev.inc":
+                pkgrev_file = os.path.join(root, f)
+                break
+        if pkgrev_file:
+            break
+    if not pkgrev_file:
+        print(f"[WARNING] generic-pkgrev.inc file not found in {generic_support_path}")
+    else:
+        # Prepare PV updates
+        pv_updates = []
+        if issue_number:
+            # Update PV for all components in updates
+            for update in updates:
+                comp = update['repo'].split('/')[-1]
+                pv_field = f'PV:pn-{comp}'
+                pv_updates.append((pv_field, update['tag']))
         else:
-            print("[DEBUG] No changes detected, PR will not be created for meta layer.")
-        # Add support PR link if created
-        # Create support layer PR if support_changed
-        if support_changed:
-            support_pr_title = f"[Auto] Update support layer for {ticket_number}"
-            support_pr_description = build_pr_list_description(updates)
+            # Update PV for only the single PR's component
+            comp = updates[0]['repo'].split('/')[-1]
+            pv_field = f'PV:pn-{comp}'
+            pv_updates.append((pv_field, updates[0]['tag']))
+
+        # Read old pkgrev_file lines
+        with open(pkgrev_file, 'r', newline='') as f:
+            old_lines = f.readlines()
+        new_lines = old_lines.copy()
+        changed = False
+        for pv_field, tag in pv_updates:
+            found_pv = False
+            for idx, line in enumerate(new_lines):
+                if line.strip().startswith(f'{pv_field} ='):
+                    new_lines[idx] = f'{pv_field} = "{tag}"\n'
+                    found_pv = True
+            if not found_pv:
+                new_lines.append(f'{pv_field} = "{tag}"\n')
+            # Mark as changed if any PV field was updated or added
+            if not found_pv or any(line != old_lines[idx] for idx, line in enumerate(new_lines) if line.strip().startswith(f'{pv_field} =')):
+                changed = True
+
+        # If any PV field changed, update file and commit/push
+        support_pr_obj = None
+        if changed and support_repo:
+            create_or_checkout_branch(support_repo, support_branch, base_branch)
+            with open(pkgrev_file, 'w', newline='\n') as f:
+                f.writelines(new_lines)
+            support_repo.git.add(pkgrev_file)
+            commit_and_push(
+                generic_support_path,
+                "Update support layer PV fields for {}".format(', '.join([f"{pv}" for pv, _ in pv_updates]))
+            )
             support_pr_obj = create_pull_request(
                 github_token,
                 'rdkcentral/meta-middleware-generic-support',
                 support_branch,
                 base_branch,
-                support_pr_title,
-                support_pr_description
+                f"[Auto] Update support layer for {ticket_number}" + (f" (PR {pr_number})" if not issue_number else ""),
+                build_pr_list_description(updates)
             )
-        # ...existing code for summary issue...
-    else:
-        # Single PR: update PV for only its component in the topic branch
-        feature_branch = f"topic/auto-{ticket_number.lower()}-pr-{pr_number}"
-        meta_pr_title = f"[Auto] Update meta layer for {ticket_number} (PR {pr_number})"
-        meta_pr_description = build_pr_list_description(updates)
-        create_or_checkout_branch(Repo(meta_repo_path), feature_branch, base_branch)
-        support_branch = f"topic/auto-support-{ticket_number.lower()}-pr-{pr_number}"
-        support_repo = None
-        pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
-        comp = updates[0]['repo'].split('/')[-1]
-        pv_field = f'PV:pn-{comp}'
-        old_lines = []
-        previous_value = None
-        found_pv = False
-        new_lines = []
-        pv_updated = False
-        if os.path.exists(pkgrev_file):
-            with open(pkgrev_file, 'r', newline='') as f:
-                old_lines = f.readlines()
-            # Extract previous PV value before any branch checkout
-            for line in old_lines:
-                pv_match = re.match(rf'^{re.escape(pv_field)}\s*=\s*"([^"]+)"', line.strip())
-                if pv_match:
-                    previous_value = pv_match.group(1)
-                    found_pv = True
-                # Build new_lines for update
-                if pv_match:
-                    new_lines.append(f'{pv_field} = "{updates[0]["tag"]}"\n')
-                    pv_updated = True
-                else:
-                    new_lines.append(line)
-            if not pv_updated:
-                new_lines.append(f'{pv_field} = "{updates[0]["tag"]}"\n')
-        # Only checkout and update if changes are needed
-        if old_lines and old_lines != new_lines and os.path.isdir(generic_support_path):
-            try:
-                support_repo = Repo(generic_support_path)
-                create_or_checkout_branch(support_repo, support_branch, base_branch)
-                with open(pkgrev_file, 'w', newline='\n') as f:
-                    f.writelines(new_lines)
-                support_repo.git.add(pkgrev_file)
-                support_repo.git.commit('-m', f"Update PV for {comp} for {ticket_number} PR {pr_number}")
-                support_repo.git.push('origin', support_branch)
-                print(f"[DEBUG] Updated PV field for {comp} in {pkgrev_file}. Previous value: '{previous_value}', new value: '{updates[0]["tag"]}'")
-            except Exception as e:
-                print(f"[DEBUG] Could not open or update support repo at {generic_support_path}: {e}")
-        elif old_lines:
-            print(f"[DEBUG] No PV changes needed for {pkgrev_file}. Previous value: '{previous_value}', new value: '{updates[0]["tag"]}'")
-        changes_made, support_changed, support_repo = update_bb_and_pkgrev(meta_repo_path, generic_support_path, updates)
-        print(f"[DEBUG] changes_made: {changes_made}, support_changed: {support_changed}")
-        if changes_made:
-            commit_and_push(
-                meta_repo_path,
-                "Update meta and pkgrev for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
-            )
-            meta_pr_obj = create_pull_request(
-                github_token,
-                meta_repo_name,
-                feature_branch,
-                base_branch,
-                meta_pr_title,
-                meta_pr_description
-            )
-            if meta_pr_obj:
-                auto_pr_links.append(f"- [Meta Video Auto PR]({meta_pr_obj.html_url})")
+        elif not support_repo:
+            print("[DEBUG] No support_repo found for PR creation.")
         else:
-            print("[DEBUG] No changes detected, PR will not be created for meta layer.")
-        # Add support PR link if created
-    # --- Create summary issue only if more than one auto PR exists ---
-    # Create summary issue only if both meta and support layer auto PRs exist
+            print("[DEBUG] No PV changes needed for support layer.")
+
+    # --- Create summary issue only if both meta and support PRs are created ---
     if meta_pr_obj and support_pr_obj:
-        auto_pr_links = []
-        auto_pr_links.append(f"- [Meta Video Auto PR]({meta_pr_obj.html_url})")
-        auto_pr_links.append(f"- [Meta Support Auto PR]({support_pr_obj.html_url})")
-        issue_title = f"{ticket_number} - Auto PRs for rdkcentral/{comp_name}"
+        pr_links = []
+        pr_links.append(f"- [Meta Video Auto PR]({meta_pr_obj.html_url})")
+        pr_links.append(f"- [Meta Support Auto PR]({support_pr_obj.html_url})")
+        issue_title = f"{ticket_number} - Auto PR for rdkcentral/{comp_name} " + (f"{issue_number}" if issue_number else f"{pr_number}")
         issue_body = (
-            f"## Automated Update Summary for {ticket_number}\n\n"
+            f"## Automated Update Summary for {ticket_number}" + (f" (PR {pr_number})" if not issue_number else "") + "\n\n"
             f"### PRs Created:\n" +
-            "\n".join(auto_pr_links) +
+            "\n".join(pr_links) +
             "\n\n### Details:\n" +
             build_pr_list_description(updates)
         )
