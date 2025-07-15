@@ -244,19 +244,26 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                     line_stripped.startswith('SRCREV ?=') or
                     (line_stripped.startswith(f'SRCREV_{comp} =') if comp else False)
                 ):
-                    # Updating SRCREV in {bb_file} to {sha}
-                    # Preserve the assignment type (e.g., =, ?=)
-                    if 'SRCREV ?=' in line_stripped:
-                        new_lines.append(f'SRCREV ?= "{sha}"\n')
-                    elif f'SRCREV_{comp} =' in line_stripped:
-                        new_lines.append(f'SRCREV_{comp} = "{sha}"\n')
+                    # Only update if value is different
+                    current_value = re.findall(r'"([^"]+)"', line_stripped)
+                    if current_value and current_value[0] == sha:
+                        new_lines.append(line)
                     else:
-                        new_lines.append(f'SRCREV = "{sha}"\n')
-                    file_changed = True
+                        if 'SRCREV ?=' in line_stripped:
+                            new_lines.append(f'SRCREV ?= "{sha}"\n')
+                        elif f'SRCREV_{comp} =' in line_stripped:
+                            new_lines.append(f'SRCREV_{comp} = "{sha}"\n')
+                        else:
+                            new_lines.append(f'SRCREV = "{sha}"\n')
+                        file_changed = True
                 elif line_stripped.startswith('PV ?='):
-                    # Updating PV in {bb_file} to {tag_to_use}
-                    new_lines.append(f'PV ?= "{tag_to_use}"\n')
-                    file_changed = True
+                    # Only update if value is different
+                    current_value = re.findall(r'"([^"]+)"', line_stripped)
+                    if current_value and current_value[0] == str(tag_to_use):
+                        new_lines.append(line)
+                    else:
+                        new_lines.append(f'PV ?= "{tag_to_use}"\n')
+                        file_changed = True
                 else:
                     new_lines.append(line)
             # Print diff for debugging
