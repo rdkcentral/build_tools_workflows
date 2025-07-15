@@ -277,8 +277,12 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             found_pv = False
             previous_value = None
             for line in old_lines:
-                if line.strip().startswith(f'{pkgrev_pv_field} ='):
-                    previous_value = line.strip().split('=')[1].strip().strip('"')
+                print(f"[DEBUG] pkgrev_file line: {line.strip()}")
+                # Use regex to extract PV value
+                pv_match = re.match(rf'^{re.escape(pkgrev_pv_field)}\s*=\s*"([^"]+)"', line.strip())
+                if pv_match:
+                    previous_value = pv_match.group(1)
+                    print(f"[DEBUG] Found previous PV value: {previous_value}")
                     found_pv = True
                     break
             if found_pv:
