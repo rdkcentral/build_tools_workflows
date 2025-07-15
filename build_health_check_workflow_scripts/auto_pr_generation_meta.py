@@ -662,6 +662,7 @@ def main():
                     new_lines[idx] = f'{pv_field} = "{tag}"\n'
                     found_pv = True
             if not found_pv:
+                print(f"[DEBUG] Adding new PV field: {pv_field} = {tag}")
                 new_lines.append(f'{pv_field} = "{tag}"\n')
             # Mark as changed if any PV field was updated or added
             if not found_pv or any(line != old_lines[idx] for idx, line in enumerate(new_lines) if line.strip().startswith(f'{pv_field} =')):
