@@ -294,14 +294,14 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             for pv_field, pv_value in pv_updates.items():
                 if line.strip().startswith(f'{pv_field} ='):
                     current_value = re.findall(r'"([^"]+)"', line.strip())
-                    print(f"[DEBUG] Current PV value for {pv_field}: {current_value}")
-                    print(f"[DEBUG] New PV value for {pv_field}: {pv_value}")
+                    print(f"[SUPPORT-DBG] PKGREV: Found field {pv_field} in file.")
+                    print(f"[SUPPORT-DBG] PKGREV: Current value: {current_value}, New value: {pv_value}")
                     if current_value and current_value[0] == str(pv_value):
                         new_lines.append(line)
-                        print(f"[DEBUG] PV field {pv_field} already set to {pv_value}, no update needed.")
+                        print(f"[SUPPORT-DBG] PKGREV: No update needed for {pv_field}.")
                     else:
+                        print(f"[SUPPORT-DBG] PKGREV: Updating {pv_field} from {current_value[0] if current_value else 'None'} to {pv_value}.")
                         new_lines.append(f'{pv_field} = "{pv_value}"\n')
-                        print(f"[DEBUG] PV field {pv_field} updated from {current_value[0] if current_value else 'None'} to {pv_value}.")
                     updated_fields.add(pv_field)
                     updated = True
                     break
@@ -310,20 +310,21 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         # Add any new PV fields not present in the file
         for pv_field, pv_value in pv_updates.items():
             if pv_field not in updated_fields:
-                print(f"PV field {pv_field} not found in {pkgrev_file}, appending new line.")
+                print(f"[SUPPORT-DBG] PKGREV: Adding new field {pv_field} with value {pv_value}.")
                 new_lines.append(f'{pv_field} = "{pv_value}"\n')
         if old_lines != new_lines:
+            print(f"[SUPPORT-DBG] PKGREV: Writing updated PKGREV file {pkgrev_file}.")
             with open(pkgrev_file, 'w', newline='\n') as f:
                 f.writelines(new_lines)
             support_repo.git.add(pkgrev_file)
             support_changed = True
-            print(f"Updated {pkgrev_file}")
+            print(f"[SUPPORT-DBG] PKGREV: Staged {pkgrev_file} for commit.")
         else:
-            print(f"No change needed for {pkgrev_file}")
+            print(f"[SUPPORT-DBG] PKGREV: No changes detected in {pkgrev_file}.")
     elif pkgrev_file:
-        print(f"[WARNING] pkgrev_file exists but support_repo not found: {pkgrev_file}")
+        print(f"[SUPPORT-DBG] PKGREV: pkgrev_file exists but support_repo not found: {pkgrev_file}")
     else:
-        print(f"[WARNING] generic-pkgrev.inc file not found, skipping support layer update.")
+        print(f"[SUPPORT-DBG] PKGREV: generic-pkgrev.inc file not found, skipping support layer update.")
     print(f"update_bb_and_pkgrev completed")
     return changed, support_changed, support_repo
 #Build the PR list description
@@ -339,6 +340,7 @@ def build_pr_list_description(prs):
 #Commit the changes to the manifest files and push to the feature branch
 def commit_and_push(manifest_repo_path, commit_message):
     repo = Repo(manifest_repo_path)
+    print(f"[DBG] Current branch before commit: {repo.active_branch.name}")
     if repo.is_dirty():
         # Ensure git user.name and user.email are set
         config_writer = repo.config_writer()
@@ -359,10 +361,13 @@ def commit_and_push(manifest_repo_path, commit_message):
                 config_writer.set_value('user', 'email', committer_email)
         config_writer.release()
         repo.git.commit('-m', commit_message)
+        print(f"[DBG] Branch after commit: {repo.active_branch.name}")
         repo.git.push('origin', repo.active_branch.name)
+        print(f"[DBG] Branch after push: {repo.active_branch.name}")
     else:
+        print(f"[DBG] Current branch before commit: {repo.active_branch.name}")
         print("No changes to commit.")
-
+        print(f"[DBG] Branch after commit: {repo.active_branch.name}")
 
 #Create a new PR for the updated manifest files
 def create_pull_request(github_token, repo_name, head_branch, base_branch, title, description):
