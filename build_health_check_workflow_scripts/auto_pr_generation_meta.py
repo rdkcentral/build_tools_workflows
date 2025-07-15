@@ -653,22 +653,25 @@ def main():
         # Read all lines from pkgrev_file
         with open(pkgrev_file, 'r', newline='') as f:
             old_lines = f.readlines()
+
         new_lines = []
         changed = False
         # Track which PV fields are updated
         updated_fields = {pv_field: False for pv_field, _ in pv_updates}
-        # Update only relevant PV fields, preserve all other lines
+        # Only keep the first occurrence of each PV field, and replace it
         for line in old_lines:
             line_stripped = line.strip()
-            updated = False
+            replaced = False
             for pv_field, tag in pv_updates:
                 if line_stripped.startswith(f'{pv_field} ='):
-                    new_lines.append(f'{pv_field} = "{tag}"\n')
-                    changed = True
-                    updated_fields[pv_field] = True
-                    updated = True
+                    if not updated_fields[pv_field]:
+                        new_lines.append(f'{pv_field} = "{tag}"\n')
+                        changed = True
+                        updated_fields[pv_field] = True
+                    # If already updated, skip this duplicate line
+                    replaced = True
                     break
-            if not updated:
+            if not replaced:
                 new_lines.append(line)
         # Add any missing PV fields
         for pv_field, tag in pv_updates:
