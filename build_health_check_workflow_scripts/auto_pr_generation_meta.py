@@ -279,11 +279,13 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             tag_to_use = tag
             with open(pkgrev_file, 'r', newline='') as f:
                 old_lines = f.readlines()
+            new_lines = old_lines.copy()
             file_changed = False
             found_pv = False
-            new_lines = []
             for idx, line in enumerate(old_lines):
+                print("pkgrev_pv_field:", pkgrev_pv_field)
                 if line.strip().startswith(f'{pkgrev_pv_field} ='):
+                    print("Updating existing PV field")
                     new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
                     file_changed = True
                     found_pv = True
@@ -647,25 +649,32 @@ def main():
             pv_field = f'PV:pn-{comp}'
             pv_updates.append((pv_field, updates[0]['tag']))
 
-        # Read old pkgrev_file lines
+
+        # Read all lines from pkgrev_file
         with open(pkgrev_file, 'r', newline='') as f:
-            print(f"[DEBUG] Reading pkgrev_file: {pkgrev_file}")
-            #print the lines for debugging
-            print(f"[DEBUG] Old pkgrev_file lines: {f.readlines()}")
             old_lines = f.readlines()
-        new_lines = old_lines.copy()
+        new_lines = []
         changed = False
+        # Track which PV fields are updated
+        updated_fields = {pv_field: False for pv_field, _ in pv_updates}
+        # Update only relevant PV fields, preserve all other lines
+        for line in old_lines:
+            line_stripped = line.strip()
+            updated = False
+            for pv_field, tag in pv_updates:
+                if line_stripped.startswith(f'{pv_field} ='):
+                    new_lines.append(f'{pv_field} = "{tag}"\n')
+                    changed = True
+                    updated_fields[pv_field] = True
+                    updated = True
+                    break
+            if not updated:
+                new_lines.append(line)
+        # Add any missing PV fields
         for pv_field, tag in pv_updates:
-            found_pv = False
-            for idx, line in enumerate(new_lines):
-                if line.strip().startswith(f'{pv_field} ='):
-                    new_lines[idx] = f'{pv_field} = "{tag}"\n'
-                    found_pv = True
-            if not found_pv:
+            if not updated_fields[pv_field]:
                 print(f"[DEBUG] Adding new PV field: {pv_field} = {tag}")
                 new_lines.append(f'{pv_field} = "{tag}"\n')
-            # Mark as changed if any PV field was updated or added
-            if not found_pv or any(line != old_lines[idx] for idx, line in enumerate(new_lines) if line.strip().startswith(f'{pv_field} =')):
                 changed = True
 
         # If any PV field changed, update file and commit/push
