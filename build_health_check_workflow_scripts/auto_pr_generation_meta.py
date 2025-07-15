@@ -276,28 +276,28 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             file_changed = False
             found_pv = False
             previous_value = None
-            for idx, line in enumerate(old_lines):
+            for line in old_lines:
                 if line.strip().startswith(f'{pkgrev_pv_field} ='):
                     previous_value = line.strip().split('=')[1].strip().strip('"')
                     found_pv = True
-            # Only update if previous_value is different from tag_to_use
-            if previous_value != str(tag_to_use):
-                new_lines = []
-                for idx, line in enumerate(old_lines):
-                    if line.strip().startswith(f'{pkgrev_pv_field} ='):
-                        new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
-                    else:
-                        new_lines.append(line)
-                if not found_pv:
-                    print(f"PV field {pkgrev_pv_field} not found in {pkgrev_file}, appending new line.")
-                    new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
-                with open(pkgrev_file, 'w', newline='\n') as f:
-                    f.writelines(new_lines)
-                support_repo.git.add(pkgrev_file)
-                support_changed = True
-                print(f"Updated {pkgrev_file}. Previous value: '{previous_value}', new value: '{tag_to_use}'")
+                    break
+            if found_pv:
+                if previous_value != str(tag_to_use):
+                    new_lines = []
+                    for line in old_lines:
+                        if line.strip().startswith(f'{pkgrev_pv_field} ='):
+                            new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
+                        else:
+                            new_lines.append(line)
+                    with open(pkgrev_file, 'w', newline='\n') as f:
+                        f.writelines(new_lines)
+                    support_repo.git.add(pkgrev_file)
+                    support_changed = True
+                    print(f"Updated {pkgrev_file}. Previous value: '{previous_value}', new value: '{tag_to_use}'")
+                else:
+                    print(f"No change needed for {pkgrev_file}. Reason: PV field for {pkgrev_pv_field} already matches the desired value. Previous value: '{previous_value}', new value: '{tag_to_use}'")
             else:
-                print(f"No change needed for {pkgrev_file}. Reason: PV field for {pkgrev_pv_field} already matches the desired value '{tag_to_use}'.")
+                print(f"PV field {pkgrev_pv_field} not found in {pkgrev_file}. No update performed.")
         elif pkgrev_file:
             print(f"pkgrev_file does not exist or support_repo not found: {pkgrev_file}")
         # --- DEBUG: Print comp, pkgrev_pv_field, and tag for every update attempt ---
