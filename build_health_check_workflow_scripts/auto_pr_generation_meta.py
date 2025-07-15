@@ -195,36 +195,32 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             print(f"[DEBUG] Could not open support repo at {support_repo_path}: {e}")
     changed = False
     support_changed = False
-    pkgrev_file = None
-    for root, dirs, files in os.walk(generic_support_path):
-        for f in files:
-            if f == "generic-pkgrev.inc":
-                pkgrev_file = os.path.join(root, f)
-                break
-        if pkgrev_file:
-            break
-    if not pkgrev_file:
-        print(f"[WARNING] generic-pkgrev.inc file not found in {generic_support_path}")
-    # --- FIX: accumulate all PV changes and write once at the end ---
-    pv_updates = {}
     for update in updates:
         repo_name = update['repo']
         sha = update['sha']
         tag = update.get('tag')
         print(f"[DEBUG] Processing update: repo={repo_name}, sha={sha}, tag={tag}")
+        # Determine .bb paths (meta and support layer)
         bb_file = None
-        comp = None
+        support_bb_file = None
+        pkgrev_file = None
         pkgrev_pv_field = None
         if repo_name.startswith('rdkcentral/entservices-'):
             comp = repo_name.split('/')[-1]
-            for root, dirs, files in os.walk(manifest_repo_path):
-                for f in files:
-                    if f == f"{comp}.bb":
-                        bb_file = os.path.join(root, f)
-                        break
-                if bb_file:
-                    break
+            # Determine .bb file location for entservices-apis and other entservices-* components
+            if comp == 'entservices-apis':
+                bb_file = os.path.join(manifest_repo_path, 'recipes-extended', 'wpe-framework', 'entservices-apis.bb')
+            else:
+                bb_file = os.path.join(manifest_repo_path, 'recipes-extended', 'entservices', f'{comp}.bb')
+            # For support layer PR (if support .bb files exist, keep logic, else skip)
+            support_entservices_dir = os.path.join(generic_support_path, 'recipes-extended', 'entservices')
+            support_bb_file = os.path.join(support_entservices_dir, f'{comp}.bb')
+            pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
             pkgrev_pv_field = f'PV:pn-{comp}'
+        else:
+            print(f"[DEBUG] Skipping repo {repo_name} (not handled)")
+            continue
+        # Informational: bb_file and pkgrev_file
         # Update .bb file SRCREV and PV in meta layer
         if bb_file and os.path.exists(bb_file):
             # Opening bb_file: {bb_file}
@@ -242,26 +238,19 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                     line_stripped.startswith('SRCREV ?=') or
                     (line_stripped.startswith(f'SRCREV_{comp} =') if comp else False)
                 ):
-                    # Only update if value is different
-                    current_value = re.findall(r'"([^"]+)"', line_stripped)
-                    if current_value and current_value[0] == sha:
-                        new_lines.append(line)
+                    # Updating SRCREV in {bb_file} to {sha}
+                    # Preserve the assignment type (e.g., =, ?=)
+                    if 'SRCREV ?=' in line_stripped:
+                        new_lines.append(f'SRCREV ?= "{sha}"\n')
+                    elif f'SRCREV_{comp} =' in line_stripped:
+                        new_lines.append(f'SRCREV_{comp} = "{sha}"\n')
                     else:
-                        if 'SRCREV ?=' in line_stripped:
-                            new_lines.append(f'SRCREV ?= "{sha}"\n')
-                        elif f'SRCREV_{comp} =' in line_stripped:
-                            new_lines.append(f'SRCREV_{comp} = "{sha}"\n')
-                        else:
-                            new_lines.append(f'SRCREV = "{sha}"\n')
-                        file_changed = True
+                        new_lines.append(f'SRCREV = "{sha}"\n')
+                    file_changed = True
                 elif line_stripped.startswith('PV ?='):
-                    # Only update if value is different
-                    current_value = re.findall(r'"([^"]+)"', line_stripped)
-                    if current_value and current_value[0] == str(tag_to_use):
-                        new_lines.append(line)
-                    else:
-                        new_lines.append(f'PV ?= "{tag_to_use}"\n')
-                        file_changed = True
+                    # Updating PV in {bb_file} to {tag_to_use}
+                    new_lines.append(f'PV ?= "{tag_to_use}"\n')
+                    file_changed = True
                 else:
                     new_lines.append(line)
             # Print diff for debugging
@@ -278,64 +267,87 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         else:
             print(f"[DEBUG] .bb file does not exist: {bb_file}")
 
-        # Instead of updating pkgrev_file immediately, accumulate intended PV changes
-        if pkgrev_pv_field:
-            pv_updates[pkgrev_pv_field] = tag  # tag may be None
 
-    # Now, update pkgrev_file once with all PV changes
-    if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
-        print(f"[DEBUG] Updating all PV fields in {pkgrev_file}: {pv_updates}")
-        with open(pkgrev_file, 'r', newline='') as f:
-            old_lines = f.readlines()
-        print(f"[SUPPORT-DBG] PKGREV: Loaded {len(old_lines)} lines from {pkgrev_file}")
-        print(f"[SUPPORT-DBG] PKGREV: pv_updates to apply: {pv_updates}")
-        new_lines = []
-        updated_fields = set()
-        for line_num, line in enumerate(old_lines):
-            updated = False
-            for pv_field, pv_value in pv_updates.items():
-                if line.strip().startswith(f'{pv_field} ='):
-                    current_value = re.findall(r'"([^"]+)"', line.strip())
-                    print(f"[SUPPORT-DBG] PKGREV: Line {line_num}: Found field {pv_field} in file.")
-                    print(f"[SUPPORT-DBG] PKGREV: Line {line_num}: Current value: {current_value}, New value: {pv_value}")
-                    if current_value and current_value[0] == str(pv_value):
-                        new_lines.append(line)
-                        print(f"[SUPPORT-DBG] PKGREV: Line {line_num}: No update needed for {pv_field}.")
-                    else:
-                        print(f"[SUPPORT-DBG] PKGREV: Line {line_num}: Updating {pv_field} from {current_value[0] if current_value else 'None'} to {pv_value}.")
-                        new_lines.append(f'{pv_field} = "{pv_value}"\n')
-                    updated_fields.add(pv_field)
-                    updated = True
-                    break
-            if not updated:
-                new_lines.append(line)
-        # Add any new PV fields not present in the file
-        for pv_field, pv_value in pv_updates.items():
-            if pv_field not in updated_fields:
-                print(f"[SUPPORT-DBG] PKGREV: Adding new field {pv_field} with value {pv_value}.")
-                new_lines.append(f'{pv_field} = "{pv_value}"\n')
-        print(f"[SUPPORT-DBG] PKGREV: old_lines == new_lines? {old_lines == new_lines}")
-        print(f"[SUPPORT-DBG] PKGREV: updated_fields: {updated_fields}")
-        print(f"[SUPPORT-DBG] PKGREV: pv_updates keys: {list(pv_updates.keys())}")
-        if old_lines != new_lines:
-            print(f"[SUPPORT-DBG] PKGREV: Writing updated PKGREV file {pkgrev_file}.")
-            with open(pkgrev_file, 'w', newline='\n') as f:
-                f.writelines(new_lines)
-            support_repo.git.add(pkgrev_file)
-            support_changed = True
-            print(f"[SUPPORT-DBG] PKGREV: Staged {pkgrev_file} for commit.")
-        else:
-            print(f"[SUPPORT-DBG] PKGREV: No changes detected in {pkgrev_file}.")
-            print(f"[SUPPORT-DBG] PKGREV: Final PV values in file:")
-            for line in new_lines:
-                m = re.match(r'^(PV:pn-[\w-]+)\s*=\s*"([^"]*)"', line.strip())
-                if m:
-                    print(f"[SUPPORT-DBG] PKGREV: {m.group(1)} = {m.group(2)}")
-    elif pkgrev_file:
-        print(f"[SUPPORT-DBG] PKGREV: pkgrev_file exists but support_repo not found: {pkgrev_file}")
-    else:
-        print(f"[SUPPORT-DBG] PKGREV: generic-pkgrev.inc file not found, skipping support layer update.")
+        # Update PV in support layer for all entservices-* components
+        if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
+            tag_to_use = tag
+            with open(pkgrev_file, 'r', newline='') as f:
+                old_lines = f.readlines()
+            file_changed = False
+            found_pv = False
+            new_lines = []
+            for idx, line in enumerate(old_lines):
+                if line.strip().startswith(f'{pkgrev_pv_field} ='):
+                    new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
+                    file_changed = True
+                    found_pv = True
+                else:
+                    new_lines.append(line)
+            if not found_pv:
+                print(f"PV field {pkgrev_pv_field} not found in {pkgrev_file}, appending new line.")
+                new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
+                file_changed = True
+            if old_lines != new_lines:
+                with open(pkgrev_file, 'w', newline='\n') as f:
+                    f.writelines(new_lines)
+                support_repo.git.add(pkgrev_file)
+                support_changed = True
+                print(f"Updated {pkgrev_file}")
+            else:
+                print(f"No change needed for {pkgrev_file}")
+        elif pkgrev_file:
+            print(f"pkgrev_file does not exist or support_repo not found: {pkgrev_file}")
+        # --- DEBUG: Print comp, pkgrev_pv_field, and tag for every update attempt ---
+        # Informational: update_bb_and_pkgrev status
+        tag_to_use = tag
+        if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
+            # Opening pkgrev_file: {pkgrev_file}
+            with open(pkgrev_file, 'r', newline='') as f:
+                old_lines = f.readlines()
+            file_changed = False
+            found_pv = False
+            new_lines = []
+            for idx, line in enumerate(old_lines):
+                # pkgrev_file line {idx}: {line.strip()}
+                if line.strip().startswith(f'{pkgrev_pv_field} ='):
+                    # Updating PV in {pkgrev_file} to {tag_to_use} (line {idx})
+                    new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
+                    file_changed = True
+                    found_pv = True
+                else:
+                    new_lines.append(line)
+            if not found_pv:
+                print(f"PV field {pkgrev_pv_field} not found in {pkgrev_file}, appending new line.")
+                new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
+                file_changed = True
+            # Print diff for debugging
+            # Diff and content change info removed
+            if old_lines != new_lines:
+                with open(pkgrev_file, 'w', newline='\n') as f:
+                    f.writelines(new_lines)
+                support_repo.git.add(pkgrev_file)
+                support_changed = True
+                print(f"Updated {pkgrev_file}")
+            else:
+                print(f"No change needed for {pkgrev_file}")
+        elif pkgrev_file:
+            print(f"pkgrev_file does not exist or support_repo not found: {pkgrev_file}")
     print(f"update_bb_and_pkgrev completed")
+    #print the changed status and diff 
+    if not support_changed:
+        print("[DEBUG] No changes made to support layer.")
+    else:
+        print(f"[DEBUG] Changes made to support layer in the branch: {support_repo.active_branch.name}")
+        #print the new lines in the support layer
+        for line in new_lines:
+            print(f"[DEBUG] {line.strip()}")
+        # --- DEBUG: Print the diff of support layer changes for debugging ---
+        if old_lines != new_lines:
+            print("[DEBUG] Support layer changes detected:")
+            for old_line, new_line in zip(old_lines, new_lines):
+                if old_line != new_line:
+                    print(f"[DEBUG] - {old_line.strip()} -> {new_line.strip()}")
+        # Print the diff of support layer changes for debugging
     return changed, support_changed, support_repo
 #Build the PR list description
 def build_pr_list_description(prs):
@@ -350,7 +362,6 @@ def build_pr_list_description(prs):
 #Commit the changes to the manifest files and push to the feature branch
 def commit_and_push(manifest_repo_path, commit_message):
     repo = Repo(manifest_repo_path)
-    print(f"[DBG] Current branch before commit: {repo.active_branch.name}")
     if repo.is_dirty():
         # Ensure git user.name and user.email are set
         config_writer = repo.config_writer()
@@ -371,17 +382,10 @@ def commit_and_push(manifest_repo_path, commit_message):
                 config_writer.set_value('user', 'email', committer_email)
         config_writer.release()
         repo.git.commit('-m', commit_message)
-        print(f"[DBG] Branch after commit: {repo.active_branch.name}")
         repo.git.push('origin', repo.active_branch.name)
-        print(f"[DBG] Branch after push: {repo.active_branch.name}")
     else:
-        print(f"[DBG] Current branch before commit: {repo.active_branch.name}")
         print("No changes to commit.")
-        print("[DBG] Git status output:")
-        print(repo.git.status())
-        print("[DBG] Git diff output:")
-        print(repo.git.diff())
-        print(f"[DBG] Branch after commit: {repo.active_branch.name}")
+
 
 #Create a new PR for the updated manifest files
 def create_pull_request(github_token, repo_name, head_branch, base_branch, title, description):
@@ -406,12 +410,6 @@ def create_pull_request(github_token, repo_name, head_branch, base_branch, title
 def create_summary_issue(github_token, repo_name, issue_title, issue_body):
     g = Github(github_token)
     repo = g.get_repo(repo_name)
-    # Check for existing open issue with the same title
-    for issue in repo.get_issues(state='open'):
-        if issue.title == issue_title:
-            print(f"Summary issue already exists: {issue.html_url}")
-            return issue
-    # If not found, create new
     issue = repo.create_issue(title=issue_title, body=issue_body)
     print(f"Issue created: {issue.html_url}")
     return issue
