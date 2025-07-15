@@ -195,15 +195,25 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             print(f"[DEBUG] Could not open support repo at {support_repo_path}: {e}")
     changed = False
     support_changed = False
+    pkgrev_file = None
+    # Find generic-pkgrev.inc once
+    for root, dirs, files in os.walk(generic_support_path):
+        for f in files:
+            if f == "generic-pkgrev.inc":
+                pkgrev_file = os.path.join(root, f)
+                break
+        if pkgrev_file:
+            break
+    if not pkgrev_file:
+        print(f"[WARNING] generic-pkgrev.inc file not found in {generic_support_path}")
     for update in updates:
         repo_name = update['repo']
         sha = update['sha']
         tag = update.get('tag')
         print(f"[DEBUG] Processing update: repo={repo_name}, sha={sha}, tag={tag}")
         bb_file = None
-        pkgrev_file = None
-        pkgrev_pv_field = None
         comp = None
+        pkgrev_pv_field = None
         if repo_name.startswith('rdkcentral/entservices-'):
             comp = repo_name.split('/')[-1]
             # Find .bb file
@@ -214,16 +224,8 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                         break
                 if bb_file:
                     break
-            # Find pkgrev.inc file and set PV field as PV:PN-<COMPONENT>
-            pkgrev_file_name = f"{comp}-pkgrev.inc"
-            for root, dirs, files in os.walk(generic_support_path):
-                for f in files:
-                    if f == pkgrev_file_name:
-                        pkgrev_file = os.path.join(root, f)
-                        pkgrev_pv_field = f'PV:PN-{comp.upper()}'
-                        break
-                if pkgrev_file:
-                    break
+            # Set PV field for generic-pkgrev.inc
+            pkgrev_pv_field = f'PV:pn-{comp}'
         # Informational: bb_file and pkgrev_file
         # Update .bb file SRCREV and PV in meta layer
         if bb_file and os.path.exists(bb_file):
@@ -271,8 +273,9 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         else:
             print(f"[DEBUG] .bb file does not exist: {bb_file}")
 
-        # Update PV:PN-<COMPONENT> in pkgrev.inc for all components
-        if pkgrev_file and os.path.exists(pkgrev_file) and support_repo:
+        # Update PV:pn-<comp_name> in generic-pkgrev.inc for all components
+        if pkgrev_file and os.path.exists(pkgrev_file) and support_repo and pkgrev_pv_field:
+            print(f"[DEBUG] Attempting to update PV field {pkgrev_pv_field} in {pkgrev_file}")
             tag_to_use = tag
             with open(pkgrev_file, 'r', newline='') as f:
                 old_lines = f.readlines()
@@ -299,7 +302,9 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             else:
                 print(f"No change needed for {pkgrev_file}")
         elif pkgrev_file:
-            print(f"pkgrev_file does not exist or support_repo not found: {pkgrev_file}")
+            print(f"[WARNING] pkgrev_file exists but support_repo not found: {pkgrev_file}")
+        else:
+            print(f"[WARNING] generic-pkgrev.inc file not found, skipping support layer update.")
     print(f"update_bb_and_pkgrev completed")
     return changed, support_changed, support_repo
 #Build the PR list description
