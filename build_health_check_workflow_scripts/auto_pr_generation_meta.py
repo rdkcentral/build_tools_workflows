@@ -624,6 +624,15 @@ def main():
         meta_pr_title = f"[Auto] Update meta layer for {ticket_number}"
         meta_pr_description = build_pr_list_description(updates)
         create_or_checkout_branch(Repo(meta_repo_path), feature_branch, base_branch)
+        # Checkout support topic branch BEFORE making changes
+        support_branch = f"topic/auto-support-{ticket_number.lower()}-issue-{issue_number}"
+        support_repo = None
+        if os.path.isdir(generic_support_path):
+            try:
+                support_repo = Repo(generic_support_path)
+                create_or_checkout_branch(support_repo, support_branch, base_branch)
+            except Exception as e:
+                print(f"[DEBUG] Could not open support repo at {generic_support_path}: {e}")
         changes_made, support_changed, support_repo = update_bb_and_pkgrev(meta_repo_path, generic_support_path, updates)
         if changes_made:
             commit_and_push(
@@ -684,7 +693,16 @@ def main():
         meta_pr_title = f"[Auto] Update meta layer for {ticket_number} (PR {pr_number})"
         meta_pr_description = build_pr_list_description(updates)
         create_or_checkout_branch(Repo(meta_repo_path), feature_branch, base_branch)
-        changes_made, support_changed, support_repo = update_bb_and_pkgrev(meta_repo_path, generic_support_path, updates)
+        # Checkout support topic branch BEFORE making changes
+        support_branch = f"topic/auto-support-{ticket_number.lower()}-pr-{pr_number}"
+        support_repo = None
+        if os.path.isdir(generic_support_path):
+            try:
+                support_repo = Repo(generic_support_path)
+                create_or_checkout_branch(support_repo, support_branch, base_branch)
+            except Exception as e:
+                print(f"[DEBUG] Could not open support repo at {generic_support_path}: {e}")
+        changes_made, support_changed, _ = update_bb_and_pkgrev(meta_repo_path, generic_support_path, updates)
         print(f"[DEBUG] changes_made: {changes_made}, support_changed: {support_changed}")
         if changes_made:
             commit_and_push(
