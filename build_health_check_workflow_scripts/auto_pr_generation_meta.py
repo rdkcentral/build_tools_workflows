@@ -618,22 +618,49 @@ def main():
     meta_pr_obj = None
     support_pr_obj = None
     comp_name = updates[0]['repo'].split('/')[-1] if updates else "unknown"
+    auto_pr_links = []
+    # --- Refactored PV update logic for support layer ---
     if issue_number:
-        # Branch name for issue-linked PRs
+        # Issue-linked PR: update PV for only the merged component in the shared topic branch
         feature_branch = f"topic/auto-{ticket_number.lower()}-issue-{issue_number}"
         meta_pr_title = f"[Auto] Update meta layer for {ticket_number}"
         meta_pr_description = build_pr_list_description(updates)
         create_or_checkout_branch(Repo(meta_repo_path), feature_branch, base_branch)
-        # Checkout support topic branch BEFORE making changes
         support_branch = f"topic/auto-support-{ticket_number.lower()}-issue-{issue_number}"
         support_repo = None
         if os.path.isdir(generic_support_path):
             try:
                 support_repo = Repo(generic_support_path)
                 create_or_checkout_branch(support_repo, support_branch, base_branch)
+                # Only update PV field for the current merged component in generic-pkgrev.inc
+                pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
+                if os.path.exists(pkgrev_file):
+                    comp = updates[0]['repo'].split('/')[-1]
+                    pv_field = f'PV:pn-{comp}'
+                    with open(pkgrev_file, 'r', newline='') as f:
+                        old_lines = f.readlines()
+                    new_lines = []
+                    found_pv = False
+                    for line in old_lines:
+                        if line.strip().startswith(f'{pv_field} ='):
+                            new_lines.append(f'{pv_field} = "{updates[0]['tag']}"\n')
+                            found_pv = True
+                        else:
+                            new_lines.append(line)
+                    if not found_pv:
+                        new_lines.append(f'{pv_field} = "{updates[0]['tag']}"\n')
+                    if old_lines != new_lines:
+                        with open(pkgrev_file, 'w', newline='\n') as f:
+                            f.writelines(new_lines)
+                        support_repo.git.add(pkgrev_file)
+                        support_repo.git.commit('-m', f"Update PV for {comp} for {ticket_number} issue {issue_number}")
+                        support_repo.git.push('origin', support_branch)
+                        print(f"[DEBUG] Updated PV field for {comp} in {pkgrev_file}")
+                    else:
+                        print(f"[DEBUG] No PV changes needed for {pkgrev_file}")
             except Exception as e:
-                print(f"[DEBUG] Could not open support repo at {generic_support_path}: {e}")
-        changes_made, support_changed, support_repo = update_bb_and_pkgrev(meta_repo_path, generic_support_path, updates)
+                print(f"[DEBUG] Could not open or update support repo at {generic_support_path}: {e}")
+        changes_made, support_changed, _ = update_bb_and_pkgrev(meta_repo_path, generic_support_path, updates)
         if changes_made:
             commit_and_push(
                 meta_repo_path,
@@ -649,59 +676,60 @@ def main():
             )
         else:
             print("[DEBUG] No changes detected, PR will not be created for meta layer.")
-
-        # Support layer PR
-        support_branch = f"topic/auto-support-{ticket_number.lower()}-issue-{issue_number}"
-        support_pr_title = f"[Auto] Update support layer for {ticket_number}"
-        support_pr_description = build_pr_list_description(updates)
+        # Add support PR link if created
+        # Create support layer PR if support_changed
         if support_changed:
-            if support_repo:
-                create_or_checkout_branch(support_repo, support_branch, base_branch)
-                commit_and_push(
-                    generic_support_path,
-                    "Update support layer entservices SRCREV for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
-                )
-                support_pr_obj = create_pull_request(
-                    github_token,
-                    'rdkcentral/meta-middleware-generic-support',
-                    support_branch,
-                    base_branch,
-                    support_pr_title,
-                    support_pr_description
-                )
-            else:
-                print("[DEBUG] No support_repo found for PR creation.")
-        # Create summary issue if at least one PR was created
-        if meta_pr_obj or support_pr_obj:
-            pr_links = []
-            if meta_pr_obj:
-                pr_links.append(f"- [Meta Video Auto PR]({meta_pr_obj.html_url})")
-            if support_pr_obj:
-                pr_links.append(f"- [Meta Support Auto PR]({support_pr_obj.html_url})")
-            issue_title = f"{ticket_number} - Auto PR for rdkcentral/{comp_name} {issue_number}"
-            issue_body = (
-                f"## Automated Update Summary for {ticket_number}\n\n"
-                f"### PRs Created:\n" +
-                "\n".join(pr_links) +
-                "\n\n### Details:\n" +
-                build_pr_list_description(updates)
+            support_pr_title = f"[Auto] Update support layer for {ticket_number}"
+            support_pr_description = build_pr_list_description(updates)
+            support_pr_obj = create_pull_request(
+                github_token,
+                'rdkcentral/meta-middleware-generic-support',
+                support_branch,
+                base_branch,
+                support_pr_title,
+                support_pr_description
             )
-            create_summary_issue(github_token, meta_repo_name, issue_title, issue_body)
+        # ...existing code for summary issue...
     else:
-        # Branch name for single PRs
+        # Single PR: update PV for only its component in the topic branch
         feature_branch = f"topic/auto-{ticket_number.lower()}-pr-{pr_number}"
         meta_pr_title = f"[Auto] Update meta layer for {ticket_number} (PR {pr_number})"
         meta_pr_description = build_pr_list_description(updates)
         create_or_checkout_branch(Repo(meta_repo_path), feature_branch, base_branch)
-        # Checkout support topic branch BEFORE making changes
         support_branch = f"topic/auto-support-{ticket_number.lower()}-pr-{pr_number}"
         support_repo = None
         if os.path.isdir(generic_support_path):
             try:
                 support_repo = Repo(generic_support_path)
                 create_or_checkout_branch(support_repo, support_branch, base_branch)
+                # Only update PV field for the single component in generic-pkgrev.inc
+                pkgrev_file = os.path.join(generic_support_path, 'conf', 'include', 'generic-pkgrev.inc')
+                if os.path.exists(pkgrev_file):
+                    comp = updates[0]['repo'].split('/')[-1]
+                    pv_field = f'PV:pn-{comp}'
+                    with open(pkgrev_file, 'r', newline='') as f:
+                        old_lines = f.readlines()
+                    new_lines = []
+                    found_pv = False
+                    for line in old_lines:
+                        if line.strip().startswith(f'{pv_field} ='):
+                            new_lines.append(f'{pv_field} = "{updates[0]['tag']}"\n')
+                            found_pv = True
+                        else:
+                            new_lines.append(line)
+                    if not found_pv:
+                        new_lines.append(f'{pv_field} = "{updates[0]['tag']}"\n')
+                    if old_lines != new_lines:
+                        with open(pkgrev_file, 'w', newline='\n') as f:
+                            f.writelines(new_lines)
+                        support_repo.git.add(pkgrev_file)
+                        support_repo.git.commit('-m', f"Update PV for {comp} for {ticket_number} PR {pr_number}")
+                        support_repo.git.push('origin', support_branch)
+                        print(f"[DEBUG] Updated PV field for {comp} in {pkgrev_file}")
+                    else:
+                        print(f"[DEBUG] No PV changes needed for {pkgrev_file}")
             except Exception as e:
-                print(f"[DEBUG] Could not open support repo at {generic_support_path}: {e}")
+                print(f"[DEBUG] Could not open or update support repo at {generic_support_path}: {e}")
         changes_made, support_changed, _ = update_bb_and_pkgrev(meta_repo_path, generic_support_path, updates)
         print(f"[DEBUG] changes_made: {changes_made}, support_changed: {support_changed}")
         if changes_made:
@@ -717,45 +745,25 @@ def main():
                 meta_pr_title,
                 meta_pr_description
             )
+            if meta_pr_obj:
+                auto_pr_links.append(f"- [Meta Video Auto PR]({meta_pr_obj.html_url})")
         else:
             print("[DEBUG] No changes detected, PR will not be created for meta layer.")
-
-        # Support layer PR
-        support_branch = f"topic/auto-support-{ticket_number.lower()}-pr-{pr_number}"
-        support_pr_title = f"[Auto] Update support layer for {ticket_number} (PR {pr_number})"
-        support_pr_description = build_pr_list_description(updates)
-        if support_changed:
-            if support_repo:
-                create_or_checkout_branch(support_repo, support_branch, base_branch)
-                commit_and_push(
-                    generic_support_path,
-                    "Update support layer entservices SRCREV for {}".format(', '.join([f"{u['repo'].split('/')[-1]}:{u['sha'][:7]}:{u['tag']}" for u in updates]))
-                )
-                support_pr_obj = create_pull_request(
-                    github_token,
-                    'rdkcentral/meta-middleware-generic-support',
-                    support_branch,
-                    base_branch,
-                    support_pr_title,
-                    support_pr_description
-                )
-            else:
-                print("[DEBUG] No support_repo found for PR creation.")
-        # Create summary issue if at least one PR was created
-        if meta_pr_obj or support_pr_obj:
-            pr_links = []
-            if meta_pr_obj:
-                pr_links.append(f"- [Meta Video Auto PR]({meta_pr_obj.html_url})")
-            if support_pr_obj:
-                pr_links.append(f"- [Meta Support Auto PR]({support_pr_obj.html_url})")
-            issue_title = f"{ticket_number} - Auto PR for rdkcentral/{comp_name} {pr_number}"
-            issue_body = (
-                f"## Automated Update Summary for {ticket_number} (PR {pr_number})\n\n"
-                f"### PRs Created:\n" +
-                "\n".join(pr_links) +
-                "\n\n### Details:\n" +
-                build_pr_list_description(updates)
-            )
-            create_summary_issue(github_token, meta_repo_name, issue_title, issue_body)
+        # Add support PR link if created
+    # --- Create summary issue only if more than one auto PR exists ---
+    # Create summary issue only if both meta and support layer auto PRs exist
+    if meta_pr_obj and support_pr_obj:
+        auto_pr_links = []
+        auto_pr_links.append(f"- [Meta Video Auto PR]({meta_pr_obj.html_url})")
+        auto_pr_links.append(f"- [Meta Support Auto PR]({support_pr_obj.html_url})")
+        issue_title = f"{ticket_number} - Auto PRs for rdkcentral/{comp_name}"
+        issue_body = (
+            f"## Automated Update Summary for {ticket_number}\n\n"
+            f"### PRs Created:\n" +
+            "\n".join(auto_pr_links) +
+            "\n\n### Details:\n" +
+            build_pr_list_description(updates)
+        )
+        create_summary_issue(github_token, meta_repo_name, issue_title, issue_body)
 if __name__ == '__main__':
     main()
