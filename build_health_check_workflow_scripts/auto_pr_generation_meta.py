@@ -283,7 +283,7 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
         # Update PV:pn-<comp_name> in generic-pkgrev.inc for all components
         if pkgrev_file and os.path.exists(pkgrev_file) and support_repo and pkgrev_pv_field:
             print(f"[DEBUG] Attempting to update PV field {pkgrev_pv_field} in {pkgrev_file}")
-            tag_to_use = tag
+            tag_to_use = tag  # tag may be None
             with open(pkgrev_file, 'r', newline='') as f:
                 old_lines = f.readlines()
             file_changed = False
@@ -291,8 +291,10 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
             new_lines = []
             for idx, line in enumerate(old_lines):
                 if line.strip().startswith(f'{pkgrev_pv_field} ='):
-                    # Only update if value is different
                     current_value = re.findall(r'"([^"]+)"', line.strip())
+                    print(f"[DEBUG] Current PV value for {pkgrev_pv_field}: {current_value}")
+                    print(f"[DEBUG] New PV value for {pkgrev_pv_field}: {tag_to_use}")
+                    # If tag_to_use is None, it will update the field to PV:pn-<comp> = "None"
                     if current_value and current_value[0] == str(tag_to_use):
                         new_lines.append(line)
                         print(f"[DEBUG] PV field {pkgrev_pv_field} already set to {tag_to_use}, no update needed.")
@@ -307,6 +309,7 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                 print(f"PV field {pkgrev_pv_field} not found in {pkgrev_file}, appending new line.")
                 new_lines.append(f'{pkgrev_pv_field} = "{tag_to_use}"\n')
                 file_changed = True
+            # --- ADD THIS LOGIC TO FORCE GIT TO COMMIT EVEN IF FILE IS ALREADY STAGED ---
             if old_lines != new_lines:
                 with open(pkgrev_file, 'w', newline='\n') as f:
                     f.writelines(new_lines)
@@ -314,7 +317,14 @@ def update_bb_and_pkgrev(manifest_repo_path, generic_support_path, updates):
                 support_changed = True
                 print(f"Updated {pkgrev_file}")
             else:
-                print(f"No change needed for {pkgrev_file}")
+                # If file_changed is True, but old_lines == new_lines, it means the file was already updated but not committed
+                # Force commit if file_changed is True
+                if file_changed and support_repo.is_dirty():
+                    support_repo.git.add(pkgrev_file)
+                    support_changed = True
+                    print(f"[DEBUG] File {pkgrev_file} was already updated, forcing commit.")
+                else:
+                    print(f"No change needed for {pkgrev_file}")
         elif pkgrev_file:
             print(f"[WARNING] pkgrev_file exists but support_repo not found: {pkgrev_file}")
         else:
