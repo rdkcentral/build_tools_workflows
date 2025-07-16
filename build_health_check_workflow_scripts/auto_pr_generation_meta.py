@@ -708,14 +708,42 @@ def main():
         pr_links = []
         pr_links.append(f"- [Meta Video Auto PR]({meta_pr_obj.html_url})")
         pr_links.append(f"- [Meta Support Auto PR]({support_pr_obj.html_url})")
-        issue_title = f"{ticket_number} - Auto PR for rdkcentral/{comp_name} " + (f"{issue_number}" if issue_number else f"{pr_number}")
+        # Compose a unique summary issue title for the topic branch/issue
+        if issue_number:
+            comp_names = ', '.join([u['repo'].split('/')[-1] for u in updates])
+            issue_title = f"[Auto] {ticket_number} - Meta Layer Updates for Issue {issue_number} ({comp_names})"
+        else:
+            comp_names = updates[0]['repo'].split('/')[-1] if updates else "unknown"
+            issue_title = f"[Auto] {ticket_number} - Meta Layer Updates for PR {pr_number} ({comp_names})"
         issue_body = (
-            f"## Automated Update Summary for {ticket_number}" + (f" (PR {pr_number})" if not issue_number else "") + "\n\n"
+            f"## Automated Update Summary for {ticket_number} " + (f"(Issue {issue_number})" if issue_number else f"(PR {pr_number})") + "\n\n"
             f"### PRs Created:\n" +
             "\n".join(pr_links) +
             "\n\n### Details:\n" +
             build_pr_list_description(updates)
         )
-        create_summary_issue(github_token, meta_repo_name, issue_title, issue_body)
+        # Only create the summary issue if it does not already exist for this topic branch/issue
+        g = Github(github_token)
+        repo = g.get_repo(meta_repo_name)
+        existing_issue = None
+        if issue_number:
+            # Look for any open issue with the ticket number and 'Meta Layer Updates for Issue <issue_number>' in the title
+            search_phrase = f"{ticket_number}" in issue.title and f"Meta Layer Updates for Issue {issue_number}" in issue.title
+        else:
+            # For PR-only, match the PR number and 'Meta Layer Updates for PR <pr_number>'
+            search_phrase = f"{ticket_number}" in issue.title and f"Meta Layer Updates for PR {pr_number}" in issue.title
+        for issue in repo.get_issues(state='open'):
+            if issue_number:
+                if f"{ticket_number}" in issue.title and f"Meta Layer Updates for Issue {issue_number}" in issue.title:
+                    print(f"Summary issue already exists: {issue.html_url}")
+                    existing_issue = issue
+                    break
+            else:
+                if f"{ticket_number}" in issue.title and f"Meta Layer Updates for PR {pr_number}" in issue.title:
+                    print(f"Summary issue already exists: {issue.html_url}")
+                    existing_issue = issue
+                    break
+        if not existing_issue:
+            create_summary_issue(github_token, meta_repo_name, issue_title, issue_body)
 if __name__ == '__main__':
     main()
