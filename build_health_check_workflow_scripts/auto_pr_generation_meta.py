@@ -582,6 +582,9 @@ def main():
 
     meta_pr_obj = None
     support_pr_obj = None
+    meta_pr_url = None
+    support_pr_url = None
+    summary_issue_url = None
     comp_name = updates[0]['repo'].split('/')[-1] if updates else "unknown"
     # --- Refactored support layer PV update logic ---
     # Branch setup
@@ -612,9 +615,20 @@ def main():
             meta_pr_description
         )
         if meta_pr_obj:
-            print(f"[INFO] Meta layer PR created: {meta_pr_obj.html_url}")
+            meta_pr_url = meta_pr_obj.html_url
+            print(f"[INFO] Meta layer PR created: {meta_pr_url}")
     else:
-        print("[DEBUG] No changes detected, PR will not be created for meta layer.")
+        # Try to find existing PR for this branch
+        g = Github(github_token)
+        repo = g.get_repo(meta_repo_name)
+        pulls = repo.get_pulls(state='open', head=f"{repo.owner.login}:{feature_branch}")
+        for pr in pulls:
+            meta_pr_obj = pr
+            meta_pr_url = pr.html_url
+            print(f"[INFO] Existing Meta layer PR: {meta_pr_url}")
+            break
+        if not meta_pr_url:
+            print("[DEBUG] No changes detected, PR will not be created for meta layer.")
 
     # --- Support layer PV update logic ---
     support_repo = None
@@ -682,32 +696,43 @@ def main():
                 changed = True
 
         # If any PV field changed, update file and commit/push
-        support_pr_obj = None
-        if changed and support_repo:
-            create_or_checkout_branch(support_repo, support_branch, base_branch)
-            with open(pkgrev_file, 'w', newline='\n') as f:
-                f.writelines(new_lines)
-            support_repo.git.add(pkgrev_file)
-            commit_and_push(
-                generic_support_path,
-                "Update support layer PV fields for {}".format(', '.join([f"{pv}" for pv, _ in pv_updates]))
-            )
-            support_pr_obj = create_pull_request(
-                github_token,
-                'rdkcentral/meta-middleware-generic-support',
-                support_branch,
-                base_branch,
-                f"[Auto] Update support layer for {ticket_number}" + (f" (PR {pr_number})" if not issue_number else ""),
-                build_pr_list_description(updates)
-            )
-            if support_pr_obj:
-                print(f"[INFO] Support layer PR created: {support_pr_obj.html_url}")
-        elif not support_repo:
-            print("[DEBUG] No support_repo found for PR creation.")
-        else:
+    support_pr_obj = None
+    if changed and support_repo:
+        create_or_checkout_branch(support_repo, support_branch, base_branch)
+        with open(pkgrev_file, 'w', newline='\n') as f:
+            f.writelines(new_lines)
+        support_repo.git.add(pkgrev_file)
+        commit_and_push(
+            generic_support_path,
+            "Update support layer PV fields for {}".format(', '.join([f"{pv}" for pv, _ in pv_updates]))
+        )
+        support_pr_obj = create_pull_request(
+            github_token,
+            'rdkcentral/meta-middleware-generic-support',
+            support_branch,
+            base_branch,
+            f"[Auto] Update support layer for {ticket_number}" + (f" (PR {pr_number})" if not issue_number else ""),
+            build_pr_list_description(updates)
+        )
+        if support_pr_obj:
+            support_pr_url = support_pr_obj.html_url
+            print(f"[INFO] Support layer PR created: {support_pr_url}")
+    elif not support_repo:
+        print("[DEBUG] No support_repo found for PR creation.")
+    else:
+        # Try to find existing PR for this branch
+        g = Github(github_token)
+        repo = g.get_repo('rdkcentral/meta-middleware-generic-support')
+        pulls = repo.get_pulls(state='open', head=f"{repo.owner.login}:{support_branch}")
+        for pr in pulls:
+            support_pr_obj = pr
+            support_pr_url = pr.html_url
+            print(f"[INFO] Existing Support layer PR: {support_pr_url}")
+            break
+        if not support_pr_url:
             print("[DEBUG] No PV changes needed for support layer.")
 
-    # --- Create summary issue only if both meta and support PRs are created ---
+    # --- Always print summary issue link if both PRs exist, or if summary issue exists ---
     if meta_pr_obj and support_pr_obj:
         pr_links = []
         pr_links.append(f"- [Meta Video Auto PR]({meta_pr_obj.html_url})")
@@ -730,21 +755,47 @@ def main():
         g = Github(github_token)
         repo = g.get_repo(meta_repo_name)
         existing_issue = None
-        # No need to assign search_phrase; checks are done inside the loop
         for issue in repo.get_issues(state='open'):
             if issue_number:
                 if f"{ticket_number}" in issue.title and f"Meta Layer Updates for Issue {issue_number}" in issue.title:
                     print(f"[INFO] Summary issue already exists: {issue.html_url}")
                     existing_issue = issue
+                    summary_issue_url = issue.html_url
                     break
             else:
                 if f"{ticket_number}" in issue.title and f"Meta Layer Updates for PR {pr_number}" in issue.title:
                     print(f"[INFO] Summary issue already exists: {issue.html_url}")
                     existing_issue = issue
+                    summary_issue_url = issue.html_url
                     break
         if not existing_issue:
             created_issue = create_summary_issue(github_token, meta_repo_name, issue_title, issue_body)
             if created_issue:
-                print(f"[INFO] Summary issue created: {created_issue.html_url}")
+                summary_issue_url = created_issue.html_url
+                print(f"[INFO] Summary issue created: {summary_issue_url}")
+    else:
+        # Try to find existing summary issue and print its link
+        g = Github(github_token)
+        repo = g.get_repo(meta_repo_name)
+        for issue in repo.get_issues(state='open'):
+            if issue_number:
+                if f"{ticket_number}" in issue.title and f"Meta Layer Updates for Issue {issue_number}" in issue.title:
+                    summary_issue_url = issue.html_url
+                    print(f"[INFO] Summary issue (existing): {summary_issue_url}")
+                    break
+            else:
+                if f"{ticket_number}" in issue.title and f"Meta Layer Updates for PR {pr_number}" in issue.title:
+                    summary_issue_url = issue.html_url
+                    print(f"[INFO] Summary issue (existing): {summary_issue_url}")
+                    break
+
+    # --- Print all links at the end for traceability ---
+    print("\n==== Traceability Links ====")
+    if meta_pr_url:
+        print(f"Meta PR: {meta_pr_url}")
+    if support_pr_url:
+        print(f"Support PR: {support_pr_url}")
+    if summary_issue_url:
+        print(f"Summary Issue: {summary_issue_url}")
 if __name__ == '__main__':
     main()
