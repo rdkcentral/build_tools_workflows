@@ -411,8 +411,10 @@ def create_or_checkout_branch(repo, branch_name, base_branch):
         config_writer.release()
 
         # Check if the branch exists in the remote repository
-        existing_branches = repo.git.branch('-r')
-        if f'origin/{branch_name}' in existing_branches:
+        remote_branches = [b.strip() for b in repo.git.branch('-r').split('\n')]
+        remote_branch_full = f'origin/{branch_name}'
+        local_branches = [b.name for b in repo.branches]
+        if remote_branch_full in remote_branches:
             print(f"Branch {branch_name} already exists remotely. Checking out and updating it.")
             # Commit any outstanding changes before switching branches
             if repo.is_dirty():
@@ -424,13 +426,11 @@ def create_or_checkout_branch(repo, branch_name, base_branch):
             # If we are not already on the branch, check it out
             current_branch = repo.active_branch.name
             if current_branch != branch_name:
-                # If branch does not exist locally, create tracking branch
-                local_branches = [b.name for b in repo.branches]
                 if branch_name not in local_branches:
-                    repo.git.checkout('-b', branch_name, f'origin/{branch_name}')
+                    repo.git.checkout('-b', branch_name, remote_branch_full)
                 else:
                     repo.git.checkout(branch_name)
-            # Pull latest changes from remote
+            # Always pull latest changes from remote
             repo.git.pull('origin', branch_name)
         else:
             # Switch to 'base_branch' and pull the latest changes to ensure local repo is up-to-date
@@ -611,6 +611,8 @@ def main():
             meta_pr_title,
             meta_pr_description
         )
+        if meta_pr_obj:
+            print(f"[INFO] Meta layer PR created: {meta_pr_obj.html_url}")
     else:
         print("[DEBUG] No changes detected, PR will not be created for meta layer.")
 
@@ -698,6 +700,8 @@ def main():
                 f"[Auto] Update support layer for {ticket_number}" + (f" (PR {pr_number})" if not issue_number else ""),
                 build_pr_list_description(updates)
             )
+            if support_pr_obj:
+                print(f"[INFO] Support layer PR created: {support_pr_obj.html_url}")
         elif not support_repo:
             print("[DEBUG] No support_repo found for PR creation.")
         else:
@@ -730,15 +734,17 @@ def main():
         for issue in repo.get_issues(state='open'):
             if issue_number:
                 if f"{ticket_number}" in issue.title and f"Meta Layer Updates for Issue {issue_number}" in issue.title:
-                    print(f"Summary issue already exists: {issue.html_url}")
+                    print(f"[INFO] Summary issue already exists: {issue.html_url}")
                     existing_issue = issue
                     break
             else:
                 if f"{ticket_number}" in issue.title and f"Meta Layer Updates for PR {pr_number}" in issue.title:
-                    print(f"Summary issue already exists: {issue.html_url}")
+                    print(f"[INFO] Summary issue already exists: {issue.html_url}")
                     existing_issue = issue
                     break
         if not existing_issue:
-            create_summary_issue(github_token, meta_repo_name, issue_title, issue_body)
+            created_issue = create_summary_issue(github_token, meta_repo_name, issue_title, issue_body)
+            if created_issue:
+                print(f"[INFO] Summary issue created: {created_issue.html_url}")
 if __name__ == '__main__':
     main()
