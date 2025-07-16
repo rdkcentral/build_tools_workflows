@@ -726,12 +726,7 @@ def main():
         g = Github(github_token)
         repo = g.get_repo(meta_repo_name)
         existing_issue = None
-        if issue_number:
-            # Look for any open issue with the ticket number and 'Meta Layer Updates for Issue <issue_number>' in the title
-            search_phrase = f"{ticket_number}" in issue.title and f"Meta Layer Updates for Issue {issue_number}" in issue.title
-        else:
-            # For PR-only, match the PR number and 'Meta Layer Updates for PR <pr_number>'
-            search_phrase = f"{ticket_number}" in issue.title and f"Meta Layer Updates for PR {pr_number}" in issue.title
+        # No need to assign search_phrase; checks are done inside the loop
         for issue in repo.get_issues(state='open'):
             if issue_number:
                 if f"{ticket_number}" in issue.title and f"Meta Layer Updates for Issue {issue_number}" in issue.title:
