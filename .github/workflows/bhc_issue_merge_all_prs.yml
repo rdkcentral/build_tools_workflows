@@ -2,8 +2,8 @@ name: Merge PRs linked to Issue
 on:
   workflow_call:
     inputs:
-      issueNumber:
-        description: 'Issue Number to fetch linked PRs'
+      issueURL:
+        description: 'Please Enter the Issue URL, eg: https://github.com/rdkcentral/meta-rdk-video/issues/2407'
         required: true
         type: string
     secrets:
@@ -35,8 +35,6 @@ jobs:
     - name: Merge Pull Requests
       env:
         GITHUB_TOKEN: ${{ secrets.RDKCM_RDKE }}
-        GITHUB_ORG: 'rdkcentral'
-        ISSUE_NUMBER: ${{ github.event.inputs.issueNumber }}
-        REPO_NAME: ${{ github.repository }}
+        ISSUE_URL: ${{ github.event.inputs.issueURL }}
       run: |
-        python3 tools/build_health_check_issues_topic_scripts/merge_prs_for_issue.py ${{ github.event.inputs.issueNumber }} ${{ github.repository }}
+        python3 tools/build_health_check_workflow_scripts/merge_prs_for_issue.py ${{ github.event.inputs.issueNumber }} ${{ github.repository }}
