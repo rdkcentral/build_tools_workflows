@@ -7,7 +7,7 @@ on:
         required: true
 
 jobs:
-  auto_pr_creation_manifest:
+  auto_pr_creation_rdkb_manifest:
     runs-on: ubuntu-latest
     if: github.event.pull_request.merged == true
     steps:
@@ -24,7 +24,7 @@ jobs:
         with:
           repository: 'rdkcentral/rdkb-manifest'
           path: 'manifest_repo'
-          ref: feature/Update-workflows
+          ref: develop
           token: ${{ secrets.RDKCM_RDKE }}
 
       - name: Update Git Config
