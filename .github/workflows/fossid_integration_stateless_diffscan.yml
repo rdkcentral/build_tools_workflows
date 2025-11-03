@@ -27,12 +27,12 @@ jobs:
       - name: Checkout ignore projects file
         uses: actions/checkout@v4
         with:
-            repository: rdk-e/build_tools_workflows
+            repository: rdkcentral/build_tools_workflows
             sparse-checkout: |
               ignore_projects_fossid
             ref: develop
             path: tools
-            token: ${{ secrets.rdke_github_token }}
+            token: ${{ secrets.RDKCM_RDKE }}
       - name: Run fossid-cicd
         env:
           FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
