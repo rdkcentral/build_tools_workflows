@@ -16,7 +16,7 @@ jobs:
         with:
           repository: rdkcentral/build_tools_workflows
           path: 'tools'
-          ref: feature/CMFSUPPORT-2426
+          ref: develop
           token: ${{ secrets.RDKCM_RDKE }}
 
       - name: Checkout Manifest Repository
