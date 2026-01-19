@@ -159,10 +159,10 @@ def update_xml_files(manifest_repo_path, updates):
         file_changed = True
 
     for submanifest in root.findall('submanifest'):
-      print("Checking submanifests {}".format(submanifest.get('name')))
-      if submanifest.get('name') in updates and submanifest.get('revision') != updates[submanifest.get('name')]:
-        print("Updating {}: {} from {} to {}".format(xml_file, submanifest.get('name'), submanifest.get('revision'), updates[submanifest.get('name')]))
-        submanifest.set('revision', updates[submanifest.get('name')])
+      print("Checking submanifests {}".format(submanifest.get('project')))
+      if submanifest.get('project') in updates and submanifest.get('revision') != updates[submanifest.get('project')]:
+        print("Updating {}: {} from {} to {}".format(xml_file, submanifest.get('project'), submanifest.get('revision'), updates[submanifest.get('project')]))
+        submanifest.set('revision', updates[submanifest.get('project')])
         file_changed = True
 
     if file_changed:
