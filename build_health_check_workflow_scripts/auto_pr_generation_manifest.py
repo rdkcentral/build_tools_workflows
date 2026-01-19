@@ -146,17 +146,20 @@ def update_xml_files(manifest_repo_path, updates):
 
   for xml_file in xml_files:
     xml_path = os.path.join(manifest_repo_path, xml_file)
+    print("Checking {}".format(xml_file))
     tree = ET.parse(xml_path)
     root = tree.getroot()
     file_changed = False
 
     for project in root.findall('project'):
+      print("Checking projects {}".format(project.get('name')))
       if project.get('name') in updates and project.get('revision') != updates[project.get('name')]:
         print("Updating {}: {} from {} to {}".format(xml_file, project.get('name'), project.get('revision'), updates[project.get('name')]))
         project.set('revision', updates[project.get('name')])
         file_changed = True
 
     for submanifest in root.findall('submanifest'):
+      print("Checking submanifests {}".format(submanifest.get('name')))
       if submanifest.get('name') in updates and submanifest.get('revision') != updates[submanifest.get('name')]:
         print("Updating {}: {} from {} to {}".format(xml_file, submanifest.get('name'), submanifest.get('revision'), updates[submanifest.get('name')]))
         submanifest.set('revision', updates[submanifest.get('name')])
