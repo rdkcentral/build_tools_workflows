@@ -156,6 +156,12 @@ def update_xml_files(manifest_repo_path, updates):
         project.set('revision', updates[project.get('name')])
         file_changed = True
 
+    for submanifest in root.findall('submanifest'):
+      if submanifest.get('name') in updates and submanifest.get('revision') != updates[submanifest.get('name')]:
+        print("Updating {}: {} from {} to {}".format(xml_file, submanifest.get('name'), submanifest.get('revision'), updates[submanifest.get('name')]))
+        submanifest.set('revision', updates[submanifest.get('name')])
+        file_changed = True
+
     if file_changed:
         write_xml(root, xml_path)
         print("Updated {}".format(xml_file))
