@@ -20,7 +20,7 @@ jobs:
       image: quay.io/fossid/fossid-toolbox:latest
       credentials:
         username:  ${{ secrets.FOSSID_CONTAINER_USERNAME }}
-        password: '${{ secrets.FOSSID_CONTAINER_PASSWORD }}'
+        password: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
