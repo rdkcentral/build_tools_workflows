@@ -3,7 +3,7 @@
 **Generic, reusable build system enabling Coverity static analysis for any RDK-B component.**
 
 [![Docker](https://img.shields.io/badge/Docker-Enabled-blue)](https://github.com/rdkcentral/docker-rdk-ci)
-[![GitHub Actions](https://img.shields.io/badge/CI-GitHub_Actions-green)](https://github.com/rdkcentral/moca-agent/blob/feature/cov_native_build/.github/workflows/native-build.yml)
+[![GitHub Actions](https://img.shields.io/badge/CI-GitHub_Actions-green)](https://docs.github.com/en/actions)
 [![Coverity](https://img.shields.io/badge/Coverity-Ready-orange)](https://www.synopsys.com/software-integrity/security-testing/static-analysis-sast.html)
 
 ---
@@ -27,7 +27,7 @@
 - [CI/CD Integration](#cicd-integration)
   - [GitHub Actions](#github-actions-integration)
   - [Coverity Enablement](#coverity-enablement-flow)
-- [Migration Guide](#migration-guide)
+- [Component Adoption Guide](#component-adoption-guide)
 - [Governance & Rules](#governance--rules)
 - [References](#references)
 
@@ -123,7 +123,21 @@ This build system provides a **standardized native build workflow** that enables
 
 ### Quick Start
 
-**For existing components with `cov_docker_script` already integrated:**
+**For components using wrapper scripts (recommended):**
+
+```bash
+# Navigate to component root
+cd /path/to/your-component
+
+# Run complete build pipeline
+./cov_docker_script/run_setup_dependencies.sh
+./cov_docker_script/run_native_build.sh
+
+# Clean build (removes previous artifacts)
+CLEAN_BUILD=true ./cov_docker_script/run_setup_dependencies.sh
+```
+
+**For components with build scripts directly committed (legacy):**
 
 ```bash
 # Navigate to component root
@@ -132,7 +146,7 @@ cd /path/to/your-component
 # Run complete build pipeline
 ./cov_docker_script/common_external_build.sh
 
-# Clean build (removes previous artifacts)
+# Clean build
 CLEAN_BUILD=true ./cov_docker_script/common_external_build.sh
 ```
 
@@ -247,22 +261,30 @@ cd your-component
 **Copy the directory structure from reference:**
 
 ```bash
-# Example structure
+# Recommended structure with wrapper scripts
 your-component/
 ├── cov_docker_script/
-│   ├── common_build_utils.sh        # Utility functions
-│   ├── setup_dependencies.sh        # Dependency setup
-│   ├── build_native.sh              # Component build
-│   ├── common_external_build.sh     # Orchestrator
-│   ├── component_config.json        # Configuration
-│   └── configure_options.conf       # Build flags (optional)
+│   ├── component_config.json          # Configuration (component-specific)
+│   ├── configure_options.conf         # Build flags (optional, component-specific)
+│   ├── run_setup_dependencies.sh      # Wrapper: Setup & run dependencies
+│   ├── run_native_build.sh            # Wrapper: Setup & build component
+│   └── README.md                      # Component-specific documentation
 ├── source/
 └── ... (component files)
+
+# Note: The following scripts are automatically downloaded by wrapper scripts:
+#   - common_build_utils.sh
+#   - setup_dependencies.sh
+#   - build_native.sh
+#   - common_external_build.sh
 ```
 
 **Reference:** [moca-agent/cov_docker_script](https://github.com/rdkcentral/moca-agent/blob/feature/cov_native_build/cov_docker_script)
 
-> ⚠️ **Important:** Scripts must remain unchanged. Only JSON/conf files are modifiable.
+> ⚠️ **Important:**
+> - **DO NOT** manually copy build scripts (they are auto-downloaded by wrapper scripts)
+> - **DO** customize `component_config.json` and `configure_options.conf`
+> - **DO** create wrapper scripts (`run_*.sh`) that fetch build tools automatically
 
 #### Step 3: Configure Dependencies
 
@@ -327,6 +349,177 @@ ls -la $HOME/usr/local/lib/
 ```
 
 > ❌ **No script modifications allowed!**
+
+---
+
+### Component Wrapper Scripts (Recommended Approach)
+
+**Components should use wrapper scripts that automatically fetch build tools from this repository.**
+
+#### Why Use Wrapper Scripts?
+
+| Benefit | Description |
+|---------|-------------|
+| 🔄 **Always Up-to-Date** | Fetches latest scripts from build_tools_workflows |
+| 📦 **No Script Duplication** | Avoids committing build scripts to component repos |
+| 🛡️ **Consistent Versions** | All components use same build logic |
+| 🔧 **Easy Maintenance** | Script updates propagate automatically |
+
+#### Wrapper Script Template
+
+**run_setup_dependencies.sh** - Sets up build tools and runs dependency setup:
+
+```bash
+#!/usr/bin/env bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NATIVE_COMPONENT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BUILD_TOOLS_REPO_URL="https://github.com/rdkcentral/build_tools_workflows"
+BUILD_TOOLS_DIR="$NATIVE_COMPONENT_DIR/build_tools_workflows"
+REQUIRED_SCRIPTS=("build_native.sh" "common_build_utils.sh" "common_external_build.sh" "setup_dependencies.sh")
+
+# Basic logging
+log() { echo "[INFO] $*"; }
+ok() { echo "[OK] $*"; }
+err() { echo "[ERROR] $*" >&2; }
+
+echo ""
+echo "===== Setup Dependencies Pipeline ====="
+echo ""
+
+# Clone build_tools_workflows
+if [[ -d "$BUILD_TOOLS_DIR" ]]; then
+    log "build_tools_workflows already exists, skipping clone"
+else
+    log "Cloning build_tools_workflows (develop)"
+    cd "$NATIVE_COMPONENT_DIR"
+    git clone -b develop "$BUILD_TOOLS_REPO_URL" || { err "Clone failed"; exit 1; }
+    ok "Repository cloned"
+fi
+
+# Verify required scripts
+[[ ! -d "$BUILD_TOOLS_DIR/cov_docker_script" ]] && { err "cov_docker_script not found"; exit 1; }
+
+log "Verifying required scripts..."
+MISSING=()
+for script in "${REQUIRED_SCRIPTS[@]}"; do
+    [[ -f "$BUILD_TOOLS_DIR/cov_docker_script/$script" ]] || MISSING+=("$script")
+done
+
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+    err "Missing scripts: ${MISSING[*]}"
+    exit 1
+fi
+ok "All required scripts found"
+
+# Verify setup_dependencies.sh exists before running
+if [[ ! -f "$BUILD_TOOLS_DIR/cov_docker_script/setup_dependencies.sh" ]]; then
+    err "setup_dependencies.sh not found in build_tools_workflows"
+    exit 1
+fi
+
+# Run setup_dependencies.sh from build_tools_workflows
+echo ""
+log "Running setup_dependencies.sh from build_tools_workflows..."
+cd "$NATIVE_COMPONENT_DIR"
+"$BUILD_TOOLS_DIR/cov_docker_script/setup_dependencies.sh" "$SCRIPT_DIR/component_config.json"
+
+echo ""
+ok "Dependencies setup completed successfully!"
+echo ""
+```
+
+**run_native_build.sh** - Verifies build tools and builds component:
+
+```bash
+#!/usr/bin/env bash
+set -e
+
+################################################################################
+# Native Build Wrapper Script
+# Verifies build tools and runs build_native.sh
+# Usage: ./run_native_build.sh
+# Note: run_setup_dependencies.sh should be executed first
+################################################################################
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NATIVE_COMPONENT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BUILD_TOOLS_DIR="$NATIVE_COMPONENT_DIR/build_tools_workflows"
+
+# Basic logging functions
+log() { echo "[INFO] $*"; }
+ok() { echo "[OK] $*"; }
+err() { echo "[ERROR] $*" >&2; }
+
+echo ""
+echo "===== Native Build Pipeline ====="
+echo ""
+
+# Verify build_tools_workflows exists (should be cloned by run_setup_dependencies.sh)
+if [[ ! -d "$BUILD_TOOLS_DIR" ]]; then
+    err "build_tools_workflows directory not found. Please run run_setup_dependencies.sh first."
+    exit 1
+fi
+
+if [[ ! -f "$BUILD_TOOLS_DIR/cov_docker_script/build_native.sh" ]]; then
+    err "build_native.sh not found in build_tools_workflows. Please run run_setup_dependencies.sh first."
+    exit 1
+fi
+
+log "Build script found, proceeding with build..."
+
+# Run build_native.sh from build_tools_workflows
+echo ""
+log "Running build_native.sh from build_tools_workflows..."
+cd "$NATIVE_COMPONENT_DIR"
+"$BUILD_TOOLS_DIR/cov_docker_script/build_native.sh" "$SCRIPT_DIR/component_config.json" "$NATIVE_COMPONENT_DIR"
+
+echo ""
+ok "Native build completed successfully!"
+
+# Cleanup build_tools_workflows directory
+log "Cleaning up build_tools_workflows directory..."
+rm -rf "$BUILD_TOOLS_DIR"
+ok "Cleanup completed"
+
+echo ""
+```
+
+#### How Wrapper Scripts Work
+
+```
+Component Repository (e.g., moca-agent)
+├── cov_docker_script/
+│   ├── run_setup_dependencies.sh    ← Wrapper script (committed)
+│   ├── run_native_build.sh          ← Wrapper script (committed)
+│   ├── component_config.json        ← Component config (committed)
+│   └── configure_options.conf       ← Build flags (committed)
+│
+└── build_tools_workflows/           ← Cloned by run_setup_dependencies.sh
+    └── cov_docker_script/           ← Scripts run from here with arguments
+        ├── build_native.sh          ← Called with config & component paths
+        ├── common_build_utils.sh    ← Sourced by other scripts
+        ├── setup_dependencies.sh    ← Called with config path
+        └── common_external_build.sh ← Optional orchestrator
+```
+
+**Build Flow:**
+1. Developer runs `./cov_docker_script/run_setup_dependencies.sh`
+   - Clones `build_tools_workflows` repository
+   - Verifies required scripts exist
+   - Runs `setup_dependencies.sh` from build_tools_workflows, passing config path
+   - Leaves build_tools_workflows in place
+2. Developer runs `./cov_docker_script/run_native_build.sh`
+   - Verifies build_tools_workflows exists
+   - Runs `build_native.sh` from build_tools_workflows, passing config and component paths
+   - Cleans up build_tools_workflows directory
+
+**Result:** Component repository only commits wrapper scripts and config files. Build logic stays in build_tools_workflows and is used via arguments, not copied.
+
+#### Example: moca-agent
+
+See [moca-agent/cov_docker_script](https://github.com/rdkcentral/moca-agent/tree/feature/cov_native_build/cov_docker_script) for a complete working example.
 
 ---
 
@@ -1134,21 +1327,31 @@ Native build validation enables Coverity integration.
 
 ---
 
-## 📚 Migration Guide
+## 📚 Component Adoption Guide
 
-### Adopting for Another Component
+### Adding Native Build to a New Component
 
 **These scripts are 100% generic and component-agnostic!**
 
-#### Step 1: Copy the Scripts
+#### Step 1: Create Wrapper Scripts
+
+Create `cov_docker_script/` directory in your component:
 
 ```bash
-# Copy all scripts to your component's build directory
-cp -r /reference/cov_docker_script /path/to/new-component/
-
-# Make executable
-chmod +x /path/to/new-component/cov_docker_script/*.sh
+mkdir -p /path/to/your-component/cov_docker_script
+cd /path/to/your-component/cov_docker_script
 ```
+
+Create `run_setup_dependencies.sh` and `run_native_build.sh` using the templates from the [Component Wrapper Scripts](#component-wrapper-scripts-recommended-approach) section above.
+
+```bash
+chmod +x run_setup_dependencies.sh run_native_build.sh
+```
+
+**Key Points:**
+- Wrapper scripts automatically clone build_tools_workflows
+- No need to copy build scripts manually
+- Build scripts are always up-to-date from the repository
 
 #### Step 2: Create component_config.json
 
@@ -1222,21 +1425,25 @@ cd /path/to/new-component/cov_docker_script
 
 ---
 
-### Example: Migrating from Utopia to CcspPandM
+### Example: Using Wrapper Scripts for a New Component
 
 ```bash
-# 1. Copy scripts to CcspPandM
-cp -r utopia/cov_docker_script ccsp-p-and-m/
+# 1. Create wrapper scripts in your component
+mkdir -p your-component/cov_docker_script
+cd your-component/cov_docker_script
 
-# 2. Create ccsp-p-and-m/cov_docker_script/component_config.json
-# Update: component name, dependencies, build settings
+# Create run_setup_dependencies.sh and run_native_build.sh
+# (use wrapper script templates from this README)
+
+# 2. Create component_config.json
+# Define: component name, dependencies, build settings
 
 # 3. Run build
-cd ccsp-p-and-m/cov_docker_script
-./common_external_build.sh
+./run_setup_dependencies.sh
+./run_native_build.sh
 ```
 
-**Scripts remain unchanged - only JSON changes!**
+**Only config files in your repo - build scripts fetched automatically!**
 
 ---
 
@@ -1290,7 +1497,7 @@ cd ccsp-p-and-m/cov_docker_script
   },
   
   "native_component": {
-    "name": "moca-agent",
+    "name": "your-component",
     "include_path": "$HOME/usr/include/rdkb/",
     "lib_output_path": "$HOME/usr/local/lib/",
     "header_sources": [
@@ -1299,7 +1506,7 @@ cd ccsp-p-and-m/cov_docker_script
     "pre_build_commands": [
       {
         "description": "Generate dm_pack_datamodel.c from XML",
-        "command": "python3 $HOME/usr/include/rdkb/dm_pack_code_gen.py config/TR181-MoCA.XML source/MoCASsp/dm_pack_datamodel.c"
+        "command": "python3 $HOME/usr/include/rdkb/dm_pack_code_gen.py config/TR181-YourComponent.XML source/ComponentSsp/dm_pack_datamodel.c"
       }
     ],
     "build": {
@@ -1322,7 +1529,7 @@ cd ccsp-p-and-m/cov_docker_script
 # Core system defines
 -DSAFEC_DUMMY_API
 -D_COSA_HAL_
--DCONFIG_SYSTEM_MOCA
+-DCONFIG_SYSTEM_YOUR_COMPONENT
 
 # CCSP/Component defines
 -DCCSP_SUPPORT_ENABLED
@@ -1334,7 +1541,7 @@ cd ccsp-p-and-m/cov_docker_script
 
 # Features
 -DFEATURE_SUPPORT_WEBCONFIG
--DMOCA_HOME_ISOLATION
+-DYOUR_COMPONENT_FEATURE
 
 [CFLAGS]
 -ffunction-sections
@@ -1349,7 +1556,7 @@ cd ccsp-p-and-m/cov_docker_script
 **Build execution:**
 
 ```bash
-cd /path/to/moca-agent/cov_docker_script
+cd /path/to/your-component/cov_docker_script
 ./common_external_build.sh
 ```
 
