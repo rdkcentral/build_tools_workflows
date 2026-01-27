@@ -279,7 +279,7 @@ your-component/
 #   - common_external_build.sh
 ```
 
-**Reference:** [moca-agent/cov_docker_script](https://github.com/rdkcentral/moca-agent/blob/feature/cov_native_build/cov_docker_script)
+**Reference:** [moca-agent/cov_docker_script](https://github.com/rdkcentral/moca-agent/blob/develop/cov_docker_script)
 
 > ⚠️ **Important:**
 > - **DO NOT** manually copy build scripts (they are auto-downloaded by wrapper scripts)
@@ -519,7 +519,7 @@ Component Repository (e.g., moca-agent)
 
 #### Example: moca-agent
 
-See [moca-agent/cov_docker_script](https://github.com/rdkcentral/moca-agent/tree/feature/cov_native_build/cov_docker_script) for a complete working example.
+See [moca-agent/cov_docker_script](https://github.com/rdkcentral/moca-agent/tree/develop/cov_docker_script) for a complete working example.
 
 ---
 
@@ -1295,7 +1295,7 @@ jobs:
 3. No hardcoded paths or undeclared dependencies exist
 
 **Reference Implementation:**
-- [moca-agent native-build.yml](https://github.com/rdkcentral/moca-agent/blob/feature/cov_native_build/.github/workflows/native-build.yml)
+- [moca-agent native-build.yml](https://github.com/rdkcentral/moca-agent/blob/develop/.github/workflows/native-build.yml)
 
 ---
 
@@ -1622,19 +1622,19 @@ Docker image for consistent RDK-B native builds:
 ### Native Build Reference Implementation
 
 Complete example with cov_docker_script integration:
-- **Component:** https://github.com/rdkcentral/moca-agent/tree/feature/cov_native_build
-- **Scripts Directory:** https://github.com/rdkcentral/moca-agent/blob/feature/cov_native_build/cov_docker_script
-- **README:** https://github.com/rdkcentral/moca-agent/blob/feature/cov_native_build/cov_docker_script/README.md
+- **Component:** https://github.com/rdkcentral/moca-agent/tree/develop
+- **Scripts Directory:** https://github.com/rdkcentral/moca-agent/blob/develop/cov_docker_script
+- **README:** https://github.com/rdkcentral/moca-agent/blob/develop/cov_docker_script/README.md
 
 ### GitHub Actions Workflow
 
 Reference CI/CD workflow for native build validation:
-- **Workflow:** https://github.com/rdkcentral/moca-agent/blob/feature/cov_native_build/.github/workflows/native-build.yml
+- **Workflow:** https://github.com/rdkcentral/moca-agent/blob/develop/.github/workflows/native-build.yml
 
 ### Component Configuration Examples
 
-- **JSON Configuration:** https://github.com/rdkcentral/moca-agent/blob/feature/cov_native_build/cov_docker_script/component_config.json
-- **Configure Options:** https://github.com/rdkcentral/moca-agent/blob/feature/cov_native_build/cov_docker_script/configure_options.conf
+- **JSON Configuration:** https://github.com/rdkcentral/moca-agent/blob/develop/cov_docker_script/component_config.json
+- **Configure Options:** https://github.com/rdkcentral/moca-agent/blob/develop/cov_docker_script/configure_options.conf
 
 ---
 
