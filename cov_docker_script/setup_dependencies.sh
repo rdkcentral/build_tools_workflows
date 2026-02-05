@@ -149,7 +149,7 @@ build_repository() {
                 export PARENT_USR_DIR="$USR_DIR"
                 
                 pushd "$repo_dir" >/dev/null || return 1
-                if ! "$full_script"; then
+                if ! "$full_script" "./cov_docker_script/component_config.json"; then
                     err "Build script failed"
                     popd >/dev/null
                     return 1
