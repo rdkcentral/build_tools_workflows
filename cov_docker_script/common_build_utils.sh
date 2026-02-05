@@ -255,15 +255,24 @@ build_meson() {
 execute_commands() {
     local repo_dir="$1" config_file="$2" index="$3"
     
-    pushd "$repo_dir" >/dev/null || return 1
-    
+    # Read command count and commands BEFORE changing directories
     local cmd_count
     cmd_count=$(jq ".dependencies.repos[$index].build.commands | length" "$config_file")
     
+    # Read all commands into an array before pushd
+    local commands=()
     local i=0
     while [[ $i -lt $cmd_count ]]; do
-        local cmd
-        cmd=$(jq -r ".dependencies.repos[$index].build.commands[$i]" "$config_file")
+        commands+=("$(jq -r ".dependencies.repos[$index].build.commands[$i]" "$config_file")")
+        i=$((i + 1))
+    done
+
+    pushd "$repo_dir" >/dev/null || return 1
+
+    # Execute commands from the array
+    i=0
+    while [[ $i -lt $cmd_count ]]; do
+        local cmd="${commands[$i]}"
         step "Executing: $cmd"
         if ! eval "$cmd"; then
             err "Command failed: $cmd"
