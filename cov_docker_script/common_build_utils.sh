@@ -56,8 +56,15 @@ clone_repo() {
     fi
     ok "$name cloned successfully"
 
-    git -C "$dest" submodule update --init --recursive --remote
-    ok "$name git submodule update done"
+    if [[ -f "$dest/.gitmodules" ]]; then
+        git -C "$dest" submodule update --init --recursive --remote || {
+            err "$name git submodule update failed"
+            return 1
+        }
+        ok "$name git submodule update done!"
+    else
+        ok "$name has no submodules, skipping submodule update"
+    fi
     return 0
 }
 
