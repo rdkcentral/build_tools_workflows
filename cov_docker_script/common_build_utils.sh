@@ -57,7 +57,7 @@ clone_repo() {
     ok "$name cloned successfully"
 
     git -C "$dest" submodule update --init --recursive --remote
-    ok "$name Doing git submodule update"
+    ok "$name git submodule update done"
     return 0
 }
 
@@ -72,7 +72,7 @@ copy_headers() {
     
     if [[ -d "$src" ]]; then
         log "Copying headers: $src → $dst"
-        if ! find "$src" -maxdepth 1 -name "*.h" -exec cp {} "$dst/" \; 2>/dev/null; then
+        if ! find "$src" -maxdepth 1 -name "*.h*" -exec cp {} "$dst/" \; 2>/dev/null; then
             warn "No headers found in $src"
         fi
     else
