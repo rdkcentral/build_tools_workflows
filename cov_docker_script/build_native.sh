@@ -8,7 +8,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="${1:-$SCRIPT_DIR/component_config.json}"
-COMPONENT_DIR="${2:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+COMPONENT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 # Source common utilities
 source "$SCRIPT_DIR/common_build_utils.sh"

@@ -55,6 +55,16 @@ clone_repo() {
         return 1
     fi
     ok "$name cloned successfully"
+
+    if [[ -f "$dest/.gitmodules" ]]; then
+        git -C "$dest" submodule update --init --recursive --remote || {
+            err "$name git submodule update failed"
+            return 1
+        }
+        ok "$name git submodule update done!"
+    else
+        ok "$name has no submodules, skipping submodule update"
+    fi
     return 0
 }
 
@@ -69,7 +79,7 @@ copy_headers() {
     
     if [[ -d "$src" ]]; then
         log "Copying headers: $src → $dst"
-        if ! find "$src" -maxdepth 1 -name "*.h" -exec cp {} "$dst/" \; 2>/dev/null; then
+        if ! find "$src" -maxdepth 1 -name "*.h*" -exec cp {} "$dst/" \; 2>/dev/null; then
             warn "No headers found in $src"
         fi
     else
@@ -252,15 +262,24 @@ build_meson() {
 execute_commands() {
     local repo_dir="$1" config_file="$2" index="$3"
     
-    pushd "$repo_dir" >/dev/null || return 1
-    
+    # Read command count and commands BEFORE changing directories
     local cmd_count
     cmd_count=$(jq ".dependencies.repos[$index].build.commands | length" "$config_file")
     
+    # Read all commands into an array before pushd
+    local commands=()
     local i=0
     while [[ $i -lt $cmd_count ]]; do
-        local cmd
-        cmd=$(jq -r ".dependencies.repos[$index].build.commands[$i]" "$config_file")
+        commands+=("$(jq -r ".dependencies.repos[$index].build.commands[$i]" "$config_file")")
+        i=$((i + 1))
+    done
+
+    pushd "$repo_dir" >/dev/null || return 1
+
+    # Execute commands from the array
+    i=0
+    while [[ $i -lt $cmd_count ]]; do
+        local cmd="${commands[$i]}"
         step "Executing: $cmd"
         if ! eval "$cmd"; then
             err "Command failed: $cmd"
