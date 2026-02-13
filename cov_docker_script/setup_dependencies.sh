@@ -195,29 +195,38 @@ process_dependency() {
         if is_component_already_built "$name" "$BUILD_DIR" "$USR_DIR/local/lib"; then
             ok "$name is already built (build dir and libraries exist)"
             
-            # Show which libraries were found
-            local component_base="${name//-/_}"
-            local component_lower=$(echo "$component_base" | tr '[:upper:]' '[:lower:]')
-            local component_orig=$(echo "$name" | tr '[:upper:]' '[:lower:]')
-            local component_first="${name%%-*}"
-            component_first=$(echo "$component_first" | tr '[:upper:]' '[:lower:]')
-            local component_last="${name##*-}"
-            component_last=$(echo "$component_last" | tr '[:upper:]' '[:lower:]')
+            # Get expected libraries from build files
+            local expected_libs=$(get_expected_libraries "$BUILD_DIR/$name")
             
-            # Find libraries and display them
-            local found_libs=$(find "$USR_DIR/local/lib" -maxdepth 1 \( \
-                -name "lib${component_lower}*.so*" -o \
-                -name "lib*${component_lower}*.so*" -o \
-                -name "lib*${component_orig}*.so*" -o \
-                -name "lib${component_first}*.so*" -o \
-                -name "lib${component_last}*.so*" \
-            \) -type f 2>/dev/null | head -5)
-            
-            if [[ -n "$found_libs" ]]; then
-                log "Found libraries in $USR_DIR/local/lib:"
-                echo "$found_libs" | while IFS= read -r lib; do
-                    [[ -n "$lib" ]] && log "  → $lib"
+            if [[ -z "$expected_libs" ]]; then
+                log "$name is a header-only dependency (no libraries required)"
+            else
+                # Show which libraries were expected and found
+                log "Expected libraries from build files:"
+                echo "$expected_libs" | while IFS= read -r lib; do
+                    [[ -n "$lib" ]] && log "  - $lib"
                 done
+                
+                # Find and show the actual library files
+                local found_count=0
+                log "Found libraries in $USR_DIR/local/lib:"
+                while IFS= read -r expected_lib; do
+                    [[ -z "$expected_lib" ]] && continue
+                    local lib_base="${expected_lib#lib}"
+                    local lib_file=$(find "$USR_DIR/local/lib" -maxdepth 1 \( \
+                        -name "${expected_lib}.so*" -o \
+                        -name "${expected_lib}.a" -o \
+                        -name "${expected_lib}.la" -o \
+                        -name "lib${lib_base}.so*" -o \
+                        -name "lib${lib_base}.a" -o \
+                        -name "lib${lib_base}.la" \
+                    \) -type f 2>/dev/null | head -1)
+                    
+                    if [[ -n "$lib_file" ]]; then
+                        log "  → $lib_file"
+                        found_count=$((found_count + 1))
+                    fi
+                done <<< "$expected_libs"
             fi
             
             warn "Skipping rebuild of $name (set FORCE_REBUILD=true to rebuild)"

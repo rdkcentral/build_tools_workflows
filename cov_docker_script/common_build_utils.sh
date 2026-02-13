@@ -294,6 +294,62 @@ execute_commands() {
     return 0
 }
 
+# Get expected library names from build configuration files
+get_expected_libraries() {
+    local repo_dir="$1"
+    local expected_libs=()
+    
+    # Check for Makefile.am files (autotools)
+    if find "$repo_dir" -name "Makefile.am" -type f 2>/dev/null | grep -q .; then
+        while IFS= read -r makefile; do
+            # Extract lib_LTLIBRARIES entries (libtool libraries)
+            # Format: lib_LTLIBRARIES = libname.la
+            local ltlibs=$(grep -E '^\s*lib_LTLIBRARIES\s*[+=]' "$makefile" 2>/dev/null | \
+                sed 's/.*=\s*//g' | tr ' ' '\n' | grep -E '\.la$' | sed 's/\.la$//')
+            
+            # Extract noinst_LTLIBRARIES (non-installed libraries, still built)
+            local noinst_ltlibs=$(grep -E '^\s*noinst_LTLIBRARIES\s*[+=]' "$makefile" 2>/dev/null | \
+                sed 's/.*=\s*//g' | tr ' ' '\n' | grep -E '\.la$' | sed 's/\.la$//')
+            
+            # Combine both
+            for lib in $ltlibs $noinst_ltlibs; do
+                [[ -n "$lib" ]] && expected_libs+=("$lib")
+            done
+        done < <(find "$repo_dir" -name "Makefile.am" -type f 2>/dev/null)
+    fi
+    
+    # Check for CMakeLists.txt files (cmake)
+    if find "$repo_dir" -name "CMakeLists.txt" -type f 2>/dev/null | grep -q .; then
+        while IFS= read -r cmake_file; do
+            # Extract add_library entries
+            # Format: add_library(name SHARED/STATIC ...)
+            local cmake_libs=$(grep -E 'add_library\s*\(' "$cmake_file" 2>/dev/null | \
+                sed -E 's/.*add_library\s*\(\s*([a-zA-Z0-9_-]+).*/\1/' | grep -v '^add_library')
+            
+            for lib in $cmake_libs; do
+                [[ -n "$lib" && "$lib" != "add_library" ]] && expected_libs+=("lib$lib")
+            done
+        done < <(find "$repo_dir" -name "CMakeLists.txt" -type f 2>/dev/null)
+    fi
+    
+    # Check for meson.build files
+    if find "$repo_dir" -name "meson.build" -type f 2>/dev/null | grep -q .; then
+        while IFS= read -r meson_file; do
+            # Extract shared_library and static_library entries
+            # Format: shared_library('name', ...)
+            local meson_libs=$(grep -E "(shared|static)_library\s*\(" "$meson_file" 2>/dev/null | \
+                sed -E "s/.*(shared|static)_library\s*\(\s*'([^']+)'.*/\2/" | grep -v 'library')
+            
+            for lib in $meson_libs; do
+                [[ -n "$lib" && "$lib" != "library" ]] && expected_libs+=("lib$lib")
+            done
+        done < <(find "$repo_dir" -name "meson.build" -type f 2>/dev/null)
+    fi
+    
+    # Return unique library names
+    printf '%s\n' "${expected_libs[@]}" | sort -u
+}
+
 # Copy shared libraries to destination
 copy_libraries() {
     local src_dir="$1" dst_dir="$2"
@@ -305,7 +361,7 @@ copy_libraries() {
     find "$src_dir" \( -name "*.so*" -o -name "*.a" -o -name "*.la*" \) \( -type f -o -type l \) -exec cp -Pv {} "$dst_dir/" \; 2>/dev/null || true
 }
 
-# Check if a component is already built
+# Check if a component is already built (with intelligent library detection)
 is_component_already_built() {
     local component_name="$1"
     local build_dir="$2"
@@ -323,76 +379,80 @@ is_component_already_built() {
         return 1
     fi
     
-    # Check if libraries for THIS specific component exist in lib_path
+    # Check if lib_path exists
     if [[ ! -d "$lib_path" ]]; then
         [[ "${BUILD_SKIP_DEBUG:-false}" == "true" ]] && warn "Lib path missing: $lib_path"
         return 1
     fi
     
-    # Create multiple search patterns based on component name
-    # Convert component name to lowercase and handle common naming patterns
-    local component_base="${component_name//-/_}"  # Replace hyphens with underscores
-    local component_lower=$(echo "$component_base" | tr '[:upper:]' '[:lower:]')
-    local component_orig=$(echo "$component_name" | tr '[:upper:]' '[:lower:]')
+    # Get expected libraries from build files (Makefile.am, CMakeLists.txt, meson.build)
+    local expected_libs
+    expected_libs=$(get_expected_libraries "$component_dir")
     
-    # Extract first word from hyphenated names (e.g., "trower-base64" -> "trower")
-    local component_first="${component_name%%-*}"
-    component_first=$(echo "$component_first" | tr '[:upper:]' '[:lower:]')
-    
-    # Extract last word from hyphenated names (e.g., "trower-base64" -> "base64")
-    local component_last="${component_name##*-}"
-    component_last=$(echo "$component_last" | tr '[:upper:]' '[:lower:]')
-    
-    # Check if there are any .so files matching the component name pattern
-    # We try multiple patterns to handle various naming conventions
-    local lib_count=0
-    local found_libs=""
-    
-    # Pattern 1: lib<component_lower>*.so* (e.g., librbus.so, libsafec.so.1)
-    found_libs=$(find "$lib_path" -maxdepth 1 -name "lib${component_lower}*.so*" -type f 2>/dev/null)
-    lib_count=$(echo "$found_libs" | grep -c '^' 2>/dev/null || echo 0)
-    
-    # Pattern 2: lib*<component_lower>*.so* (e.g., libtrower_base64.so)
-    if [[ $lib_count -eq 0 ]]; then
-        found_libs=$(find "$lib_path" -maxdepth 1 -name "lib*${component_lower}*.so*" -type f 2>/dev/null)
-        lib_count=$(echo "$found_libs" | grep -c '^' 2>/dev/null || echo 0)
+    # If no libraries are expected, this is a header-only dependency
+    if [[ -z "$expected_libs" ]]; then
+        log "$component_name appears to be header-only (no libraries in build files)"
+        return 0  # Skip rebuild for header-only components
     fi
     
-    # Pattern 3: Try with original name with hyphens (e.g., libtrower-base64.so)
-    if [[ $lib_count -eq 0 && "$component_orig" != "$component_lower" ]]; then
-        found_libs=$(find "$lib_path" -maxdepth 1 -name "lib*${component_orig}*.so*" -type f 2>/dev/null)
-        lib_count=$(echo "$found_libs" | grep -c '^' 2>/dev/null || echo 0)
-    fi
+    # Check if ALL expected libraries exist
+    local all_found=true
+    local missing_libs=()
+    local found_libs=()
     
-    # Pattern 4: Try first word (e.g., "trower-base64" -> "libtrower*.so")
-    if [[ $lib_count -eq 0 && "$component_first" != "$component_name" ]]; then
-        found_libs=$(find "$lib_path" -maxdepth 1 -name "lib${component_first}*.so*" -type f 2>/dev/null)
-        lib_count=$(echo "$found_libs" | grep -c '^' 2>/dev/null || echo 0)
-    fi
-    
-    # Pattern 5: Try last word (e.g., "trower-base64" -> "libbase64*.so")
-    if [[ $lib_count -eq 0 && "$component_last" != "$component_name" && "$component_last" != "$component_first" ]]; then
-        found_libs=$(find "$lib_path" -maxdepth 1 -name "lib${component_last}*.so*" -type f 2>/dev/null)
-        lib_count=$(echo "$found_libs" | grep -c '^' 2>/dev/null || echo 0)
-    fi
+    while IFS= read -r expected_lib; do
+        [[ -z "$expected_lib" ]] && continue
+        
+        # Remove 'lib' prefix if present for searching
+        local lib_base="${expected_lib#lib}"
+        
+        # Search for the library file (.so, .so.*, .a, .la)
+        local lib_file=$(find "$lib_path" -maxdepth 1 \( \
+            -name "${expected_lib}.so*" -o \
+            -name "${expected_lib}.a" -o \
+            -name "${expected_lib}.la" -o \
+            -name "lib${lib_base}.so*" -o \
+            -name "lib${lib_base}.a" -o \
+            -name "lib${lib_base}.la" \
+        \) -type f 2>/dev/null | head -1)
+        
+        if [[ -n "$lib_file" ]]; then
+            found_libs+=("$lib_file")
+        else
+            missing_libs+=("$expected_lib")
+            all_found=false
+        fi
+    done <<< "$expected_libs"
     
     # Debug output
     if [[ "${BUILD_SKIP_DEBUG:-false}" == "true" ]]; then
-        if [[ $lib_count -gt 0 ]]; then
-            log "Found $lib_count library file(s) for $component_name:"
-            echo "$found_libs" | while IFS= read -r lib; do
-                [[ -n "$lib" ]] && log "  - $(basename "$lib")"
+        local expected_count=$(echo "$expected_libs" | grep -c '^' 2>/dev/null || echo 0)
+        log "$component_name expects $expected_count library/libraries:"
+        echo "$expected_libs" | while IFS= read -r lib; do
+            [[ -n "$lib" ]] && log "  - Expected: $lib"
+        done
+        
+        if [[ ${#found_libs[@]} -gt 0 ]]; then
+            log "Found ${#found_libs[@]} library/libraries:"
+            for lib in "${found_libs[@]}"; do
+                log "  ✓ $(basename "$lib")"
             done
-        else
-            warn "No libraries found for $component_name (tried: lib${component_lower}*.so*, lib${component_orig}*.so*, lib${component_first}*.so*, lib${component_last}*.so*)"
+        fi
+        
+        if [[ ${#missing_libs[@]} -gt 0 ]]; then
+            warn "Missing ${#missing_libs[@]} library/libraries:"
+            for lib in "${missing_libs[@]}"; do
+                warn "  ✗ $lib"
+            done
         fi
     fi
     
-    if [[ "$lib_count" -gt 0 ]]; then
-        return 0  # Component-specific libraries found
+    # Return based on whether all libraries were found
+    if [[ "$all_found" == "true" ]]; then
+        return 0  # All expected libraries found
+    else
+        return 1  # Some libraries missing
     fi
-    
-    return 1  # Component libraries not found
 }
 
 # Print banner
@@ -418,5 +478,5 @@ print_section() {
 export -f log ok warn err step
 export -f expand_path check_dependencies clone_repo copy_headers apply_patch
 export -f build_autotools build_cmake build_meson execute_commands copy_libraries
-export -f is_component_already_built
+export -f get_expected_libraries is_component_already_built
 export -f print_banner print_section
