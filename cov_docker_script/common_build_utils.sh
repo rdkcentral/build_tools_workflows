@@ -305,6 +305,41 @@ copy_libraries() {
     find "$src_dir" \( -name "*.so*" -o -name "*.a" -o -name "*.la*" \) \( -type f -o -type l \) -exec cp -Pv {} "$dst_dir/" \; 2>/dev/null || true
 }
 
+# Check if a component is already built
+is_component_already_built() {
+    local component_name="$1"
+    local build_dir="$2"
+    local lib_path="$3"
+    
+    # Expand paths
+    build_dir=$(expand_path "$build_dir")
+    lib_path=$(expand_path "$lib_path")
+    
+    local component_dir="$build_dir/$component_name"
+    
+    # Check if build directory exists
+    if [[ ! -d "$component_dir" ]]; then
+        return 1
+    fi
+    
+    # Check if at least one shared library exists in lib_path
+    # We look for any .so file that might be related to this component
+    if [[ ! -d "$lib_path" ]]; then
+        return 1
+    fi
+    
+    # Check if there are any .so files in the lib path
+    # This is a general check - if the build dir exists and libs exist, we assume it's built
+    local lib_count
+    lib_count=$(find "$lib_path" -maxdepth 1 -name "*.so*" -type f 2>/dev/null | wc -l)
+    
+    if [[ "$lib_count" -gt 0 ]]; then
+        return 0  # Component is already built
+    fi
+    
+    return 1  # Not fully built
+}
+
 # Print banner
 print_banner() {
     local title="$1"
@@ -328,4 +363,5 @@ print_section() {
 export -f log ok warn err step
 export -f expand_path check_dependencies clone_repo copy_headers apply_patch
 export -f build_autotools build_cmake build_meson execute_commands copy_libraries
+export -f is_component_already_built
 export -f print_banner print_section

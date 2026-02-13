@@ -477,6 +477,20 @@ BUILD_DIR=/tmp/build USR_DIR=/opt/rdkb ./setup_dependencies.sh
 - `BUILD_DIR` - Where to clone repos (default: `$HOME/build`)
 - `USR_DIR` - Install directory (default: `$HOME/usr`)
 - `CLEAN_BUILD` - Set to `true` to remove previous artifacts
+- `FORCE_REBUILD` - Set to `true` to force rebuild of all dependencies even if already built
+
+**Build Optimization:**
+
+The script automatically skips rebuilding dependencies that are already built. A component is considered "already built" if:
+1. Its build directory exists in `$BUILD_DIR/<component_name>/`
+2. Shared libraries exist in `$USR_DIR/local/lib/`
+
+This optimization significantly reduces build time when dealing with transitive dependencies (e.g., when component A depends on B and C, and C also depends on B, B will only be built once).
+
+To force rebuild of all dependencies:
+```bash
+FORCE_REBUILD=true ./setup_dependencies.sh
+```
 
 **Outputs:**
 - Headers: `$HOME/usr/include/rdkb/`

@@ -190,6 +190,16 @@ process_dependency() {
     
     print_section "Processing: $name"
     
+    # Check if component is already built (unless FORCE_REBUILD is set)
+    if [[ "${FORCE_REBUILD:-false}" != "true" ]]; then
+        if is_component_already_built "$name" "$BUILD_DIR" "$USR_DIR/local/lib"; then
+            ok "$name is already built (build dir and libraries exist)"
+            warn "Skipping rebuild of $name (set FORCE_REBUILD=true to rebuild)"
+            echo ""
+            return 0
+        fi
+    fi
+    
     # Clone repository
     if ! clone_repo "$name" "$repo" "$branch" "$repo_dir"; then
         err "Failed to process $name"
