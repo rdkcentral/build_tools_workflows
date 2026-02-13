@@ -43,6 +43,19 @@ print_banner "Step 1/2: Setting Up Dependencies"
 log "Running dependency setup script..."
 echo ""
 
+# Propagate build optimization environment to nested builds
+export BUILD_DIR="${BUILD_DIR:-$HOME/build}"
+export USR_DIR="${USR_DIR:-$HOME/usr}"
+export FORCE_REBUILD="${FORCE_REBUILD:-false}"
+export BUILD_SKIP_DEBUG="${BUILD_SKIP_DEBUG:-false}"
+
+# Mark that we're in a nested build to help with debugging
+export BUILD_RECURSION_LEVEL=$((${BUILD_RECURSION_LEVEL:-0} + 1))
+
+if [[ "${BUILD_SKIP_DEBUG:-false}" == "true" && ${BUILD_RECURSION_LEVEL:-0} -gt 1 ]]; then
+    warn "Nested build detected (recursion level: $BUILD_RECURSION_LEVEL)"
+fi
+
 if ! "$SCRIPT_DIR/setup_dependencies.sh" "$CONFIG_FILE"; then
     err "Dependency setup failed"
     exit 1

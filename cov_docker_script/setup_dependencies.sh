@@ -28,6 +28,13 @@ check_dependencies || exit 1
 initialize_environment() {
     print_banner "Dependency Setup"
     
+    # Show recursion level for nested builds
+    if [[ ${BUILD_RECURSION_LEVEL:-0} -gt 1 ]]; then
+        warn "This is a NESTED dependency build (level: $BUILD_RECURSION_LEVEL)"
+        log "Parent build is processing dependencies for another component"
+        echo ""
+    fi
+    
     log "Configuration: $CONFIG_FILE"
     log "Build directory: $BUILD_DIR"
     log "Install directory: $USR_DIR"
@@ -229,7 +236,12 @@ process_dependency() {
                 done <<< "$expected_libs"
             fi
             
-            warn "Skipping rebuild of $name (set FORCE_REBUILD=true to rebuild)"
+            # Show context for nested builds
+            local skip_msg="Skipping rebuild of $name (set FORCE_REBUILD=true to rebuild)"
+            if [[ ${BUILD_RECURSION_LEVEL:-0} -gt 1 ]]; then
+                skip_msg="Skipping rebuild of $name (already built by parent build, level: $BUILD_RECURSION_LEVEL)"
+            fi
+            warn "$skip_msg"
             echo ""
             return 0
         fi
