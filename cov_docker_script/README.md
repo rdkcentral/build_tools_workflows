@@ -478,6 +478,7 @@ BUILD_DIR=/tmp/build USR_DIR=/opt/rdkb ./setup_dependencies.sh
 - `USR_DIR` - Install directory (default: `$HOME/usr`)
 - `CLEAN_BUILD` - Set to `true` to remove previous artifacts
 - `FORCE_REBUILD` - Set to `true` to force rebuild of all dependencies even if already built
+- `BUILD_SKIP_DEBUG` - Set to `true` to enable debug logging for skip logic (shows which libraries were found)
 
 **Build Optimization:**
 
@@ -499,6 +500,27 @@ This optimization significantly reduces build time when dealing with transitive 
 To force rebuild of all dependencies:
 ```bash
 FORCE_REBUILD=true ./setup_dependencies.sh
+```
+
+**Debugging Skip Logic:**
+
+If you want to see why components are or aren't being skipped, enable debug mode:
+```bash
+BUILD_SKIP_DEBUG=true ./setup_dependencies.sh ./cov_docker_script/component_config.json
+```
+
+This will show:
+- Which libraries were found for each component
+- Which search patterns were tried
+- Why a component wasn't skipped (missing build dir, missing libraries, etc.)
+
+**Example debug output:**
+```
+[INFO] Found 2 library file(s) for rbus:
+[INFO]   - librbus.so
+[INFO]   - librbus.so.1
+[OK] rbus is already built (build dir and libraries exist)
+[WARN] Skipping rebuild of rbus (set FORCE_REBUILD=true to rebuild)
 ```
 
 **Outputs:**

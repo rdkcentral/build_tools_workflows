@@ -319,31 +319,73 @@ is_component_already_built() {
     
     # Check if build directory exists
     if [[ ! -d "$component_dir" ]]; then
+        [[ "${BUILD_SKIP_DEBUG:-false}" == "true" ]] && warn "Build dir missing: $component_dir"
         return 1
     fi
     
     # Check if libraries for THIS specific component exist in lib_path
     if [[ ! -d "$lib_path" ]]; then
+        [[ "${BUILD_SKIP_DEBUG:-false}" == "true" ]] && warn "Lib path missing: $lib_path"
         return 1
     fi
     
-    # Create a search pattern based on component name
+    # Create multiple search patterns based on component name
     # Convert component name to lowercase and handle common naming patterns
-    # e.g., "common-library" -> look for libcommon*.so* or lib*common*.so*
     local component_base="${component_name//-/_}"  # Replace hyphens with underscores
     local component_lower=$(echo "$component_base" | tr '[:upper:]' '[:lower:]')
+    local component_orig=$(echo "$component_name" | tr '[:upper:]' '[:lower:]')
+    
+    # Extract first word from hyphenated names (e.g., "trower-base64" -> "trower")
+    local component_first="${component_name%%-*}"
+    component_first=$(echo "$component_first" | tr '[:upper:]' '[:lower:]')
+    
+    # Extract last word from hyphenated names (e.g., "trower-base64" -> "base64")
+    local component_last="${component_name##*-}"
+    component_last=$(echo "$component_last" | tr '[:upper:]' '[:lower:]')
     
     # Check if there are any .so files matching the component name pattern
-    # We look for patterns like: lib<component>*.so*, lib*<component>*.so*
+    # We try multiple patterns to handle various naming conventions
     local lib_count=0
+    local found_libs=""
     
-    # Try exact match first (e.g., libcommon.so, libcommon.so.1)
-    lib_count=$(find "$lib_path" -maxdepth 1 \( -name "lib${component_lower}*.so*" -o -name "lib*${component_lower}*.so*" \) -type f 2>/dev/null | wc -l)
+    # Pattern 1: lib<component_lower>*.so* (e.g., librbus.so, libsafec.so.1)
+    found_libs=$(find "$lib_path" -maxdepth 1 -name "lib${component_lower}*.so*" -type f 2>/dev/null)
+    lib_count=$(echo "$found_libs" | grep -c '^' 2>/dev/null || echo 0)
     
-    # Also try with original name (with hyphens)
+    # Pattern 2: lib*<component_lower>*.so* (e.g., libtrower_base64.so)
     if [[ $lib_count -eq 0 ]]; then
-        local component_orig=$(echo "$component_name" | tr '[:upper:]' '[:lower:]')
-        lib_count=$(find "$lib_path" -maxdepth 1 \( -name "lib${component_orig}*.so*" -o -name "lib*${component_orig}*.so*" \) -type f 2>/dev/null | wc -l)
+        found_libs=$(find "$lib_path" -maxdepth 1 -name "lib*${component_lower}*.so*" -type f 2>/dev/null)
+        lib_count=$(echo "$found_libs" | grep -c '^' 2>/dev/null || echo 0)
+    fi
+    
+    # Pattern 3: Try with original name with hyphens (e.g., libtrower-base64.so)
+    if [[ $lib_count -eq 0 && "$component_orig" != "$component_lower" ]]; then
+        found_libs=$(find "$lib_path" -maxdepth 1 -name "lib*${component_orig}*.so*" -type f 2>/dev/null)
+        lib_count=$(echo "$found_libs" | grep -c '^' 2>/dev/null || echo 0)
+    fi
+    
+    # Pattern 4: Try first word (e.g., "trower-base64" -> "libtrower*.so")
+    if [[ $lib_count -eq 0 && "$component_first" != "$component_name" ]]; then
+        found_libs=$(find "$lib_path" -maxdepth 1 -name "lib${component_first}*.so*" -type f 2>/dev/null)
+        lib_count=$(echo "$found_libs" | grep -c '^' 2>/dev/null || echo 0)
+    fi
+    
+    # Pattern 5: Try last word (e.g., "trower-base64" -> "libbase64*.so")
+    if [[ $lib_count -eq 0 && "$component_last" != "$component_name" && "$component_last" != "$component_first" ]]; then
+        found_libs=$(find "$lib_path" -maxdepth 1 -name "lib${component_last}*.so*" -type f 2>/dev/null)
+        lib_count=$(echo "$found_libs" | grep -c '^' 2>/dev/null || echo 0)
+    fi
+    
+    # Debug output
+    if [[ "${BUILD_SKIP_DEBUG:-false}" == "true" ]]; then
+        if [[ $lib_count -gt 0 ]]; then
+            log "Found $lib_count library file(s) for $component_name:"
+            echo "$found_libs" | while IFS= read -r lib; do
+                [[ -n "$lib" ]] && log "  - $(basename "$lib")"
+            done
+        else
+            warn "No libraries found for $component_name (tried: lib${component_lower}*.so*, lib${component_orig}*.so*, lib${component_first}*.so*, lib${component_last}*.so*)"
+        fi
     fi
     
     if [[ "$lib_count" -gt 0 ]]; then
