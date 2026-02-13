@@ -322,22 +322,35 @@ is_component_already_built() {
         return 1
     fi
     
-    # Check if at least one shared library exists in lib_path
-    # We look for any .so file that might be related to this component
+    # Check if libraries for THIS specific component exist in lib_path
     if [[ ! -d "$lib_path" ]]; then
         return 1
     fi
     
-    # Check if there are any .so files in the lib path
-    # This is a general check - if the build dir exists and libs exist, we assume it's built
-    local lib_count
-    lib_count=$(find "$lib_path" -maxdepth 1 -name "*.so*" -type f 2>/dev/null | wc -l)
+    # Create a search pattern based on component name
+    # Convert component name to lowercase and handle common naming patterns
+    # e.g., "common-library" -> look for libcommon*.so* or lib*common*.so*
+    local component_base="${component_name//-/_}"  # Replace hyphens with underscores
+    local component_lower=$(echo "$component_base" | tr '[:upper:]' '[:lower:]')
     
-    if [[ "$lib_count" -gt 0 ]]; then
-        return 0  # Component is already built
+    # Check if there are any .so files matching the component name pattern
+    # We look for patterns like: lib<component>*.so*, lib*<component>*.so*
+    local lib_count=0
+    
+    # Try exact match first (e.g., libcommon.so, libcommon.so.1)
+    lib_count=$(find "$lib_path" -maxdepth 1 \( -name "lib${component_lower}*.so*" -o -name "lib*${component_lower}*.so*" \) -type f 2>/dev/null | wc -l)
+    
+    # Also try with original name (with hyphens)
+    if [[ $lib_count -eq 0 ]]; then
+        local component_orig=$(echo "$component_name" | tr '[:upper:]' '[:lower:]')
+        lib_count=$(find "$lib_path" -maxdepth 1 \( -name "lib${component_orig}*.so*" -o -name "lib*${component_orig}*.so*" \) -type f 2>/dev/null | wc -l)
     fi
     
-    return 1  # Not fully built
+    if [[ "$lib_count" -gt 0 ]]; then
+        return 0  # Component-specific libraries found
+    fi
+    
+    return 1  # Component libraries not found
 }
 
 # Print banner

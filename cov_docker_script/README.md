@@ -483,9 +483,18 @@ BUILD_DIR=/tmp/build USR_DIR=/opt/rdkb ./setup_dependencies.sh
 
 The script automatically skips rebuilding dependencies that are already built. A component is considered "already built" if:
 1. Its build directory exists in `$BUILD_DIR/<component_name>/`
-2. Shared libraries exist in `$USR_DIR/local/lib/`
+2. Component-specific shared libraries exist in `$USR_DIR/local/lib/`
+   - Libraries are matched by component name (e.g., `common-library` → `libcommon*.so*`)
+   - Handles naming variations (hyphens, underscores, case-insensitive)
 
 This optimization significantly reduces build time when dealing with transitive dependencies (e.g., when component A depends on B and C, and C also depends on B, B will only be built once).
+
+**Example:**
+```bash
+# Component "common-library" is skipped if these exist:
+# - $HOME/build/common-library/ (build directory)
+# - $HOME/usr/local/lib/libcommon*.so* (component libraries)
+```
 
 To force rebuild of all dependencies:
 ```bash
