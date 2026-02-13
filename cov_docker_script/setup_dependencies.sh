@@ -194,6 +194,32 @@ process_dependency() {
     if [[ "${FORCE_REBUILD:-false}" != "true" ]]; then
         if is_component_already_built "$name" "$BUILD_DIR" "$USR_DIR/local/lib"; then
             ok "$name is already built (build dir and libraries exist)"
+            
+            # Show which libraries were found
+            local component_base="${name//-/_}"
+            local component_lower=$(echo "$component_base" | tr '[:upper:]' '[:lower:]')
+            local component_orig=$(echo "$name" | tr '[:upper:]' '[:lower:]')
+            local component_first="${name%%-*}"
+            component_first=$(echo "$component_first" | tr '[:upper:]' '[:lower:]')
+            local component_last="${name##*-}"
+            component_last=$(echo "$component_last" | tr '[:upper:]' '[:lower:]')
+            
+            # Find libraries and display them
+            local found_libs=$(find "$USR_DIR/local/lib" -maxdepth 1 \( \
+                -name "lib${component_lower}*.so*" -o \
+                -name "lib*${component_lower}*.so*" -o \
+                -name "lib*${component_orig}*.so*" -o \
+                -name "lib${component_first}*.so*" -o \
+                -name "lib${component_last}*.so*" \
+            \) -type f 2>/dev/null | head -5)
+            
+            if [[ -n "$found_libs" ]]; then
+                log "Found libraries in $USR_DIR/local/lib:"
+                echo "$found_libs" | while IFS= read -r lib; do
+                    [[ -n "$lib" ]] && log "  → $lib"
+                done
+            fi
+            
             warn "Skipping rebuild of $name (set FORCE_REBUILD=true to rebuild)"
             echo ""
             return 0

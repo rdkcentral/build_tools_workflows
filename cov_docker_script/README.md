@@ -495,6 +495,13 @@ This optimization significantly reduces build time when dealing with transitive 
 # Component "common-library" is skipped if these exist:
 # - $HOME/build/common-library/ (build directory)
 # - $HOME/usr/local/lib/libcommon*.so* (component libraries)
+
+# Example output when skipping:
+# [OK] rbus is already built (build dir and libraries exist)
+# [INFO] Found libraries in /home/user/usr/local/lib:
+# [INFO]   → /home/user/usr/local/lib/librbus.so
+# [INFO]   → /home/user/usr/local/lib/librbus.so.1
+# [WARN] Skipping rebuild of rbus (set FORCE_REBUILD=true to rebuild)
 ```
 
 To force rebuild of all dependencies:
