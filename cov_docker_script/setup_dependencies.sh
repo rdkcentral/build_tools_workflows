@@ -24,6 +24,69 @@ fi
 
 check_dependencies || exit 1
 
+# Apply source patches for a dependency
+apply_dependency_patches() {
+    local index=$1
+    local repo_dir=$2
+    local name=$3
+    
+    local patch_count
+    patch_count=$(jq -r ".dependencies.repos[$index].source_patches // [] | length" "$CONFIG_FILE")
+    
+    if [[ "$patch_count" -eq 0 ]]; then
+        return 0
+    fi
+    
+    step "Applying source patches for $name ($patch_count patches)"
+    
+    local i=0
+    while [[ $i -lt $patch_count ]]; do
+        local file search replace type content patch_file
+        file=$(jq -r ".dependencies.repos[$index].source_patches[$i].file" "$CONFIG_FILE")
+        type=$(jq -r ".dependencies.repos[$index].source_patches[$i].type // \"replace\"" "$CONFIG_FILE")
+        
+        if [[ "$type" == "patch_file" ]]; then
+            # For patch_file type, get the patch file path
+            patch_file=$(jq -r ".dependencies.repos[$index].source_patches[$i].patch_file" "$CONFIG_FILE")
+            
+            # Expand $HOME and $BUILD_DIR in patch file path
+            local expanded_patch_file=$(expand_path "$patch_file")
+            
+            # For patch_file, 'file' should point to the repo directory, and patch file goes in 'search' param
+            if ! apply_patch "$repo_dir" "$expanded_patch_file" "" "$type" ""; then
+                err "Failed to apply patch $((i+1))/$patch_count for $name"
+                return 1
+            fi
+        else
+            # For replace/create types
+            search=$(jq -r ".dependencies.repos[$index].source_patches[$i].search // \"\"" "$CONFIG_FILE")
+            replace=$(jq -r ".dependencies.repos[$index].source_patches[$i].replace // \"\"" "$CONFIG_FILE")
+            content=$(jq -r ".dependencies.repos[$index].source_patches[$i].content // \"\"" "$CONFIG_FILE")
+            
+            # Expand $HOME in file path, then resolve relative paths from repo_dir
+            local expanded_file=$(expand_path "$file")
+            local target_file
+            if [[ "$expanded_file" = /* ]]; then
+                # Absolute path - use as is
+                target_file="$expanded_file"
+            else
+                # Relative path - prepend repo_dir
+                target_file="$repo_dir/$expanded_file"
+            fi
+            
+            if ! apply_patch "$target_file" "$search" "$replace" "$type" "$content"; then
+                err "Failed to apply patch $((i+1))/$patch_count for $name"
+                return 1
+            fi
+        fi
+        
+        i=$((i + 1))
+    done
+    
+    ok "Applied $patch_count patches for $name"
+    return 0
+}
+
 # Initialize environment
 initialize_environment() {
     print_banner "Dependency Setup"
@@ -193,6 +256,12 @@ process_dependency() {
     # Clone repository
     if ! clone_repo "$name" "$repo" "$branch" "$repo_dir"; then
         err "Failed to process $name"
+        return 1
+    fi
+    
+    # Apply source patches
+    if ! apply_dependency_patches "$index" "$repo_dir" "$name"; then
+        err "Failed to apply patches for $name"
         return 1
     fi
     
