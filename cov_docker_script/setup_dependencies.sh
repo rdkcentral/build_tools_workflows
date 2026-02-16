@@ -262,9 +262,9 @@ process_dependency() {
     # Debug: List directory structure for entservices-testframework
     if [[ "$name" == "entservices-testframework" ]]; then
         log "Directory structure of entservices-testframework:"
-        find "$repo_dir" -maxdepth 3 -type d | head -20
-        log "Looking for patches:"
-        find "$repo_dir" -name "*.patch" -o -name "patches" -type d | head -10
+        ls -laR "$repo_dir" | head -100
+        log "Searching for all files:"
+        find "$repo_dir" -type f | head -50
     fi
     
     # Apply source patches
