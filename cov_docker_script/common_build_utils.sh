@@ -129,6 +129,35 @@ apply_patch() {
         return 0
     fi
     
+    if [[ "$type" == "patch_file" ]]; then
+        # For patch_file type, 'search' parameter contains the patch file path
+        local patch_file="$search"
+        local repo_dir="$file"
+        
+        # Expand environment variables in patch file path
+        patch_file=$(eval echo "$patch_file")
+        
+        if [[ ! -f "$patch_file" ]]; then
+            err "Patch file not found: $patch_file"
+            return 1
+        fi
+        
+        log "Applying patch file: $patch_file to $repo_dir"
+        
+        pushd "$repo_dir" >/dev/null || return 1
+        
+        # Apply the patch using patch -p1
+        if ! patch -p1 < "$patch_file"; then
+            err "Failed to apply patch file: $patch_file"
+            popd >/dev/null
+            return 1
+        fi
+        
+        popd >/dev/null
+        ok "Patch file applied successfully"
+        return 0
+    fi
+    
     if [[ ! -f "$file" ]]; then
         err "Patch target not found: $file"
         return 1
