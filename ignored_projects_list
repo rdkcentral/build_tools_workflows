@@ -1,5 +1,2 @@
-# Ignore Projects by Repo URL (github.com/organization/repository)
-github.com/openssl/openssl
-# Ignore Projects by Org URL (github.com/organization)
 github.com/rdkcentral
 github.com/rdkcmf
