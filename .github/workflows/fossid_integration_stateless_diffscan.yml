@@ -29,7 +29,7 @@ jobs:
         with:
           repository: rdkcentral/build_tools_workflows
           sparse-checkout: |
-            ignore_projects_fossid
+            ignored_projects_list
           ref: feature/new_fossid_ignore_list
           path: tools
       - name: Run fossid-cicd
@@ -43,4 +43,4 @@ jobs:
           --fossid-token $FOSSID_HOST_TOKEN \
           --github-workflow-errors \
           --fail-on-any-issues 1 \
-          --ignore-file tools/ignore_projects_fossid
+          --ignore-file tools/ignored_projects_list
