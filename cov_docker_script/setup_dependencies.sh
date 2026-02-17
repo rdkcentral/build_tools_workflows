@@ -259,14 +259,6 @@ process_dependency() {
         return 1
     fi
     
-    # Debug: List directory structure for entservices-testframework
-    if [[ "$name" == "entservices-testframework" ]]; then
-        log "Directory structure of entservices-testframework:"
-        ls -laR "$repo_dir" | head -100
-        log "Searching for all files:"
-        find "$repo_dir" -type f | head -50
-    fi
-    
     # Apply source patches
     if ! apply_dependency_patches "$index" "$repo_dir" "$name"; then
         err "Failed to apply patches for $name"
