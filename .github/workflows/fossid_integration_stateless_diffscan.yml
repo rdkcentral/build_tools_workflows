@@ -42,5 +42,5 @@ jobs:
           --fossid-host $FOSSID_HOST_USERNAME \
           --fossid-token $FOSSID_HOST_TOKEN \
           --github-workflow-errors \
-          --fail-on-any-issues \
+          --fail-on-any-issues 1 \
           --ignore-file tools/ignore_projects_fossid
