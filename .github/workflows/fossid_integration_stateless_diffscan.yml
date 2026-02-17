@@ -30,7 +30,7 @@ jobs:
           repository: rdkcentral/build_tools_workflows
           sparse-checkout: |
             ignore_projects_fossid
-          ref: develop
+          ref: feature/new_fossid_ignore_list
           path: tools
       - name: Run fossid-cicd
         env:
