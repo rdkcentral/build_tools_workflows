@@ -19,11 +19,19 @@ jobs:
     container:
       image: quay.io/fossid/fossid-cicd:0.2.15
       credentials:
-        username:  ${{ secrets.FOSSID_CONTAINER_USERNAME }}
-        password: '${{ secrets.FOSSID_CONTAINER_PASSWORD }}'
+        username: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
+        password: "${{ secrets.FOSSID_CONTAINER_PASSWORD }}"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - name: Checkout ignore projects file
+        uses: actions/checkout@v4
+        with:
+          repository: rdkcentral/build_tools_workflows
+          sparse-checkout: |
+            ignore_projects_fossid
+          ref: develop
+          path: tools
       - name: Run fossid-cicd
         env:
           FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
@@ -34,4 +42,5 @@ jobs:
           --fossid-host $FOSSID_HOST_USERNAME \
           --fossid-token $FOSSID_HOST_TOKEN \
           --github-workflow-errors \
-          --fail-on-any-issues 1
+          --fail \
+          --ignore-projects tools/ignore_projects_fossid
