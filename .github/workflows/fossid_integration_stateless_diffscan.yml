@@ -43,4 +43,4 @@ jobs:
           --fossid-token $FOSSID_HOST_TOKEN \
           --github-workflow-errors \
           --fail-on-any-issues 1 \
-          --ignore-file tools/ignored_projects_list
+          --ignore-projects tools/ignored_projects_list
