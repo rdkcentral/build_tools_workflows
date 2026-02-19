@@ -182,6 +182,7 @@ parse_configure_options_file() {
     cppflags="${cppflags//\$HOME/$HOME}"
     cflags="${cflags//\$HOME/$HOME}"
     ldflags="${ldflags//\$HOME/$HOME}"
+
     # Build final options array
     [[ -n "$cppflags" ]] && options_array+=("CPPFLAGS=${cppflags% }")
     [[ -n "$cflags" ]] && options_array+=("CFLAGS=${cflags% }")
