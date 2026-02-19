@@ -34,6 +34,9 @@ jobs:
           ref: feature/new_fossid_ignore_list
           path: .
 
+      - name: Remove unsupported git extension
+        run: git config --unset extensions.worktreeconfig || true
+
       - name: Run fossid-cicd
         env:
           FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
