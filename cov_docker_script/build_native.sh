@@ -182,7 +182,6 @@ parse_configure_options_file() {
     cppflags="${cppflags//\$HOME/$HOME}"
     cflags="${cflags//\$HOME/$HOME}"
     ldflags="${ldflags//\$HOME/$HOME}"
-
     # Build final options array
     [[ -n "$cppflags" ]] && options_array+=("CPPFLAGS=${cppflags% }")
     [[ -n "$cflags" ]] && options_array+=("CFLAGS=${cflags% }")
@@ -199,6 +198,7 @@ build_component_autotools() {
     # Check if using external configure options file
     local config_file_path
     config_file_path=$(jq -r '.native_component.build.configure_options_file // empty' "$CONFIG_FILE")
+    
     if [[ -n "$config_file_path" ]]; then
         # Using external configuration file
         config_file_path=$(expand_path "$config_file_path")
@@ -334,6 +334,7 @@ run_pre_build_commands() {
 # Build with CMake
 build_component_cmake() {
     cd "$COMPONENT_DIR"
+
     local build_dir cmake_flags make_targets parallel_make
     build_dir=$(jq -r '.native_component.build.build_dir // "build"' "$CONFIG_FILE")
     cmake_flags=$(jq -r '.native_component.build.cmake_flags // empty' "$CONFIG_FILE")
