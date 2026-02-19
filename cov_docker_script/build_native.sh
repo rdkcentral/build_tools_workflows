@@ -182,7 +182,7 @@ parse_configure_options_file() {
     cppflags="${cppflags//\$HOME/$HOME}"
     cflags="${cflags//\$HOME/$HOME}"
     ldflags="${ldflags//\$HOME/$HOME}"
-    
+
     # Build final options array
     [[ -n "$cppflags" ]] && options_array+=("CPPFLAGS=${cppflags% }")
     [[ -n "$cflags" ]] && options_array+=("CFLAGS=${cflags% }")
@@ -335,16 +335,45 @@ run_pre_build_commands() {
 # Build with CMake
 build_component_cmake() {
     cd "$COMPONENT_DIR"
-    
+
     local build_dir cmake_flags make_targets parallel_make
     build_dir=$(jq -r '.native_component.build.build_dir // "build"' "$CONFIG_FILE")
     cmake_flags=$(jq -r '.native_component.build.cmake_flags // empty' "$CONFIG_FILE")
     cmake_flags=$(expand_path "$cmake_flags")
     make_targets=$(jq -r '.native_component.build.make_targets[]? // "all"' "$CONFIG_FILE" | tr '\n' ' ')
     parallel_make=$(jq -r '.native_component.build.parallel_make // true' "$CONFIG_FILE")
-    
-    build_cmake "$COMPONENT_DIR" "$build_dir" "$cmake_flags" "$make_targets" "$parallel_make" || return 1
-    
+
+    # Parse configure options file if exists
+    local config_file_path cppflags cflags ldflags
+    config_file_path=$(jq -r '.native_component.build.configure_options_file // empty' "$CONFIG_FILE")
+    if [[ -n "$config_file_path" ]]; then
+        config_file_path=$(expand_path "$config_file_path")
+        if [[ ! "$config_file_path" = /* ]]; then
+            config_file_path="$COMPONENT_DIR/$config_file_path"
+        fi
+
+        step "Reading configure options from: $config_file_path"
+        local parsed_array=()
+        if parse_configure_options_file "$config_file_path" parsed_array; then
+            for opt in "${parsed_array[@]}"; do
+                case $opt in
+                    CPPFLAGS=*) cppflags="${opt#CPPFLAGS=}" ;;
+                    CFLAGS=*) cflags="${opt#CFLAGS=}" ;;
+                    LDFLAGS=*) ldflags="${opt#LDFLAGS=}" ;;
+                esac
+            done
+        else
+            err "Failed to parse configure options file (for cmake)"
+            return 1
+        fi
+    fi
+
+    # Compose cmake flags
+    local combined_cmake_flags="$cmake_flags"
+    [[ -n "$cppflags" ]] && combined_cmake_flags+=" -DCMAKE_C_FLAGS=\"$cppflags $cflags\" -DCMAKE_CXX_FLAGS=\"$cppflags $cflags\""
+    [[ -n "$ldflags" ]] && combined_cmake_flags+=" -DCMAKE_EXE_LINKER_FLAGS=\"$ldflags\""
+
+    build_cmake "$COMPONENT_DIR" "$build_dir" "$combined_cmake_flags" "$make_targets" "$parallel_make" || return 1
     return 0
 }
 
