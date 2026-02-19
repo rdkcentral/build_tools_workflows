@@ -32,7 +32,7 @@ jobs:
           sparse-checkout: |
             ignored_projects_list
           ref: feature/new_fossid_ignore_list
-          path: tools
+          path: .
 
       - name: Run fossid-cicd
         env:
@@ -45,4 +45,4 @@ jobs:
           --fossid-token $FOSSID_HOST_TOKEN \
           --github-workflow-errors \
           --fail-on-any-issues 1 \
-          --ignore-file tools/ignored_projects_list
+          --ignore-file ignored_projects_list
