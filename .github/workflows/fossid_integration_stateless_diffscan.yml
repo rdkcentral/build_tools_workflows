@@ -22,11 +22,6 @@ jobs:
         username: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
         password: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-            fetch-depth: 0
-
       - name: Checkout ignore projects file
         uses: actions/checkout@v4
         with:
@@ -34,6 +29,11 @@ jobs:
           sparse-checkout: |
             ignored_projects_list
           ref: feature/new_fossid_ignore_list
+          sparse-checkout-cone-mode: false
+          
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
       - name: Run fossid-toolbox
         env:
           FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
