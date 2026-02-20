@@ -30,7 +30,7 @@ jobs:
             ignored_projects_list
           ref: feature/new_fossid_ignore_list
           sparse-checkout-cone-mode: false
-          path: /tmp/ignored-projects-list
+          path: tmp/ignored-projects-list
           
       - name: Checkout Code
         uses: actions/checkout@v4
