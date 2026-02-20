@@ -17,7 +17,7 @@ jobs:
     name: Fossid Annotate PR
     runs-on: ubuntu-latest
     container:
-      image: quay.io/fossid/fossid-cicd:0.2.15
+      image: quay.io/fossid/fossid-toolbox:1.5.29
       credentials:
         username: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
         password: "${{ secrets.FOSSID_CONTAINER_PASSWORD }}"
@@ -32,17 +32,16 @@ jobs:
           sparse-checkout: |
             ignored_projects_list
           ref: feature/new_fossid_ignore_list
-          path: tools
 
-      - name: Run fossid-cicd
+      - name: Run fossid-toolbox
         env:
           FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
           FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
         run: |
-          fossid-cicd \
+          fossid-toolbox \
           diff-scan \
           --fossid-host $FOSSID_HOST_USERNAME \
           --fossid-token $FOSSID_HOST_TOKEN \
           --github-workflow-errors \
           --fail-on-any-issues 1 \
-          --ignore-file tools/ignored_projects_list
+          --ignore-projects ignored_projects_list
