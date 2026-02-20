@@ -48,4 +48,4 @@ jobs:
           --fossid-token $FOSSID_HOST_TOKEN \
           --format github \
           --fail \
-          --ignore-projects /tmp/ignored-projects-list/ignored_projects_list
+          --ignore-projects tmp/ignored-projects-list/ignored_projects_list
