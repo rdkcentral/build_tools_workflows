@@ -29,6 +29,7 @@ jobs:
           sparse-checkout: |
             ignored_projects_list
           ref: feature/new_fossid_ignore_list
+          path: tmp
           sparse-checkout-cone-mode: false
           
       - name: Checkout Code
@@ -45,4 +46,4 @@ jobs:
           --fossid-token $FOSSID_HOST_TOKEN \
           --format github \
           --fail \
-          --ignore-projects ignored_projects_list
+          --ignore-projects tmp/ignored_projects_list
