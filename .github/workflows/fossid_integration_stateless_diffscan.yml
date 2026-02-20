@@ -13,7 +13,7 @@ on:
         required: true
 
 jobs:
-  run-fossid-toolbox:
+  run-diffscan:
     name: Fossid Annotate PR
     runs-on: ubuntu-latest
     container:
@@ -32,18 +32,12 @@ jobs:
           sparse-checkout: |
             ignored_projects_list
           ref: feature/new_fossid_ignore_list
-          
-      - name: Debug fossid-toolbox # adding step to check 
-        run: |
-          echo "Checking for fossid-toolbox..."
-          which fossid-toolbox || echo "fossid Not found"
-          
       - name: Run fossid-toolbox
         env:
           FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
           FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
         run: |
-          fossid-toolbox \
+          fossid \
           diff-scan \
           --fossid-host $FOSSID_HOST_USERNAME \
           --fossid-token $FOSSID_HOST_TOKEN \
