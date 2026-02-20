@@ -27,13 +27,15 @@ jobs:
         with:
           repository: rdkcentral/build_tools_workflows
           sparse-checkout: |
-            /ignored_projects_list
+            ignored_projects_list
           ref: feature/new_fossid_ignore_list
-          path: tmp
           sparse-checkout-cone-mode: false
+          path: /tmp/ignored-projects-list
           
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
         
       - name: Run fossid-toolbox
         env:
@@ -46,4 +48,4 @@ jobs:
           --fossid-token $FOSSID_HOST_TOKEN \
           --format github \
           --fail \
-          --ignore-projects tmp/ignored_projects_list
+          --ignore-projects /tmp/ignored-projects-list/ignored_projects_list
