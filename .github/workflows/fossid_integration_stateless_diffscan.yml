@@ -17,10 +17,10 @@ jobs:
     name: Fossid Annotate PR
     runs-on: ubuntu-latest
     container:
-      image: quay.io/fossid/fossid-toolbox:1.5.29
+      image: quay.io/fossid/fossid-toolbox:latest
       credentials:
         username: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
-        password: "${{ secrets.FOSSID_CONTAINER_PASSWORD }}"
+        password: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,7 +32,6 @@ jobs:
           sparse-checkout: |
             ignored_projects_list
           ref: feature/new_fossid_ignore_list
-
       - name: Run fossid-toolbox
         env:
           FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
