@@ -240,6 +240,16 @@ build_component_autotools() {
         fi
         ok "autogen.sh completed"
         echo ""
+    elif [[ ! -f "./configure" ]] && [[ -f "./configure.ac" ]]; then
+        # No autogen.sh and no configure, but configure.ac exists
+        # Run autoreconf to generate configure script
+        step "Running autoreconf to generate configure script"
+        if ! autoreconf -fi; then
+            err "autoreconf failed"
+            return 1
+        fi
+        ok "autoreconf completed"
+        echo ""
     fi
     
     # Configure
