@@ -30,7 +30,7 @@ jobs:
         with:
           repository: rdkcentral/build_tools_workflows
           sparse-checkout: |
-            ignored_projects_list
+            ignore_projects_fossid
           ref: develop
           path: tools
         
@@ -45,4 +45,5 @@ jobs:
             --fossid-token $FOSSID_HOST_TOKEN \
             --format github \
             --fail \
-            --ignore-projects tools/ignored_projects_list
+            --ignore-projects tools/ignore_projects_fossid            
+
