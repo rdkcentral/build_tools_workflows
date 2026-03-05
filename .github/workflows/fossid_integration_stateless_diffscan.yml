@@ -45,5 +45,5 @@ jobs:
             --fossid-token $FOSSID_HOST_TOKEN \
             --format github \
             --fail \
-            --ignore-projects tools/ignore_projects_fossid            
+            --ignore-projects tools/ignore_projects_fossid
 
