@@ -189,6 +189,44 @@ parse_configure_options_file() {
     [[ -n "$ldflags" ]] && options_array+=("LDFLAGS=${ldflags% }")
 }
 
+# Build with custom commands
+build_component_commands() {
+    cd "$COMPONENT_DIR"
+    
+    local cmd_count
+    cmd_count=$(jq -r '.native_component.build.commands // [] | length' "$CONFIG_FILE")
+    
+    if [[ "$cmd_count" -eq 0 ]]; then
+        err "No build commands configured for 'commands' build type"
+        return 1
+    fi
+    
+    step "Running build commands ($cmd_count commands)"
+    
+    local i=0
+    while [[ $i -lt $cmd_count ]]; do
+        local command
+        command=$(jq -r ".native_component.build.commands[$i]" "$CONFIG_FILE")
+        
+        # Expand environment variables in command
+        command=$(expand_path "$command")
+        
+        log "  [$((i+1))/$cmd_count] Executing: $command"
+        if eval "$command"; then
+            ok "Success: Command $((i+1))"
+        else
+            err "Failed: Command $((i+1)): $command"
+            return 1
+        fi
+        
+        i=$((i + 1))
+    done
+    
+    ok "All build commands completed successfully"
+    echo ""
+    return 0
+}
+
 # Build with autotools
 build_component_autotools() {
     cd "$COMPONENT_DIR"
@@ -389,6 +427,12 @@ build_component_cmake() {
 
 # Install libraries
 install_libraries() {
+    # Skip library installation if LIB_PATH is not set or empty
+    if [[ -z "$LIB_PATH" || "$LIB_PATH" == "null" ]]; then
+        log "No library output path configured, skipping library installation"
+        return 0
+    fi
+    
     step "Installing libraries to $LIB_PATH"
     mkdir -p "$LIB_PATH"
     
@@ -433,6 +477,13 @@ main() {
         cmake)
             if ! build_component_cmake; then
                 err "CMake build failed"
+                exit 1
+            fi
+            ;;
+
+        commands)
+            if ! build_component_commands; then
+                err "Build commands failed"
                 exit 1
             fi
             ;;
