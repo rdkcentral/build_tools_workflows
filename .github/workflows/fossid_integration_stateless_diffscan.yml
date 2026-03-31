@@ -39,7 +39,7 @@ jobs:
           FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
           FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
         run: |
-          fossid --verbose true \
+          fossid --verbose info \
             diffscan \
             --fossid-host $FOSSID_HOST_USERNAME \
             --fossid-token $FOSSID_HOST_TOKEN \
