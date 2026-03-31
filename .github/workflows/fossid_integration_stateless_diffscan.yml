@@ -17,7 +17,7 @@ jobs:
     name: Fossid Annotate PR
     runs-on: ubuntu-latest
     container:
-      image: quay.io/fossid/fossid-toolbox:latest
+      image: quay.io/fossid/fossid-toolbox:1.5.29
       credentials:
         username: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
         password: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
@@ -30,8 +30,8 @@ jobs:
         with:
           repository: rdkcentral/build_tools_workflows
           sparse-checkout: |
-            ignored_projects_list
-          ref: feature/new_fossid_ignore_list
+            ignore_projects_fossid
+          ref: develop
           path: tools
         
       - name: Run fossid-toolbox
@@ -39,10 +39,11 @@ jobs:
           FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
           FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
         run: |
-          fossid \
+          fossid -v trace \
             diffscan \
             --fossid-host $FOSSID_HOST_USERNAME \
             --fossid-token $FOSSID_HOST_TOKEN \
             --format github \
             --fail \
-            --ignore-projects tools/ignored_projects_list
+            --ignore-projects tools/ignore_projects_fossid
+
