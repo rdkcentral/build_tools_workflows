@@ -43,7 +43,7 @@ jobs:
             diffscan \
             --fossid-host $FOSSID_HOST_USERNAME \
             --fossid-token $FOSSID_HOST_TOKEN \
-            --format json \
+            --format human-readable \
             --fail \
             --ignore-projects tools/ignore_projects_fossid
 
