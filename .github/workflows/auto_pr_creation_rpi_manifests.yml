@@ -1,0 +1,99 @@
+name: Update Manifests on Meta Repo Merge
+
+on:
+  workflow_call:
+    secrets:
+      RDKCM_RDKE:
+        required: true
+
+jobs:
+  auto_pr_creation_manifest:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    steps:
+      - name: Checkout build_tools_workflows code
+        uses: actions/checkout@v4
+        with:
+          repository: rdkcentral/build_tools_workflows
+          path: 'tools'
+          ref: develop
+          token: ${{ secrets.RDKCM_RDKE }}
+
+      - name: Checkout vendor layer Manifest Repository
+        uses: actions/checkout@v4
+        with:
+          repository: 'rdkcentral/vendor-manifest-raspberrypi'
+          path: 'vendor_manifest_repo'
+          token: ${{ secrets.RDKCM_RDKE }}
+
+      - name: Checkout middleware layer Manifest Repository
+        uses: actions/checkout@v4
+        with:
+          repository: 'rdkcentral/middleware-manifest-rdke'
+          path: 'middleware_manifest_repo'
+          token: ${{ secrets.RDKCM_RDKE }}
+
+      - name: Checkout image assembler layer Manifest Repository
+        uses: actions/checkout@v4
+        with:
+          repository: 'rdkcentral/image-assembler-manifest-rdke'
+          path: 'image_assembler_manifest_repo'
+          token: ${{ secrets.RDKCM_RDKE }}
+
+      - name: Update Git Config
+        env:
+          BOT_EMAIL: ${{ vars.RDKM_BOT_EMAIL }}
+        run: |
+            cd manifest_repo
+            git config user.name "bot"
+            git config user.email "$BOT_EMAIL"
+            cd ..
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install requests PyGithub GitPython
+
+      - name: Run the update script for vendor layer
+        env:
+          GITHUB_TOKEN: ${{ secrets.RDKCM_RDKE }}
+          GITHUB_ORG: 'rdkcentral'
+          MANIFEST_REPO_PATH: ${{ github.workspace }}/vendor_manifest_repo
+          MANIFEST_REPO_NAME: 'rdkcentral/vendor-manifest-raspberrypi'
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+        run: |
+            cd vendor_manifest_repo
+            python3 ../tools/build_health_check_workflow_scripts/auto_pr_generation_manifest.py
+            cd ..
+
+      - name: Run the update script for middleware layer
+        env:
+          GITHUB_TOKEN: ${{ secrets.RDKCM_RDKE }}
+          GITHUB_ORG: 'rdkcentral'
+          MANIFEST_REPO_PATH: ${{ github.workspace }}/middleware_manifest_repo
+          MANIFEST_REPO_NAME: 'rdkcentral/middleware-manifest-rdke'
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+        run: |
+            cd middleware_manifest_repo
+            python3 ../tools/build_health_check_workflow_scripts/auto_pr_generation_manifest.py
+            cd ..
+
+      - name: Run the update script for image assembler layer
+        env:
+          GITHUB_TOKEN: ${{ secrets.RDKCM_RDKE }}
+          GITHUB_ORG: 'rdkcentral'
+          MANIFEST_REPO_PATH: ${{ github.workspace }}/image_assembler_manifest_repo
+          MANIFEST_REPO_NAME: 'rdkcentral/image-assembler-manifest-rdke'
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+        run: |
+            cd image_assembler_manifest_repo
+            python3 ../tools/build_health_check_workflow_scripts/auto_pr_generation_manifest.py
+            cd ..
