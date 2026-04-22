@@ -26,12 +26,30 @@ jobs:
           path: 'vendor_manifest_repo'
           token: ${{ secrets.RDKCM_RDKE }}
 
+      - name: Update Git Config
+        env:
+          BOT_EMAIL: ${{ vars.RDKM_BOT_EMAIL }}
+        run: |
+            cd vendor_manifest_repo
+            git config user.name "bot"
+            git config user.email "$BOT_EMAIL"
+            cd ..
+
       - name: Checkout middleware layer Manifest Repository
         uses: actions/checkout@v4
         with:
           repository: 'rdkcentral/middleware-manifest-rdke'
           path: 'middleware_manifest_repo'
           token: ${{ secrets.RDKCM_RDKE }}
+
+      - name: Update Git Config
+        env:
+          BOT_EMAIL: ${{ vars.RDKM_BOT_EMAIL }}
+        run: |
+            cd middleware_manifest_repo
+            git config user.name "bot"
+            git config user.email "$BOT_EMAIL"
+            cd ..
 
       - name: Checkout image assembler layer Manifest Repository
         uses: actions/checkout@v4
@@ -44,7 +62,7 @@ jobs:
         env:
           BOT_EMAIL: ${{ vars.RDKM_BOT_EMAIL }}
         run: |
-            cd manifest_repo
+            cd image_assembler_manifest_repo
             git config user.name "bot"
             git config user.email "$BOT_EMAIL"
             cd ..
