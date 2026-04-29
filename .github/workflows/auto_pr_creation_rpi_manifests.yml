@@ -84,7 +84,7 @@ jobs:
           MANIFEST_REPO_PATH: ${{ github.workspace }}/vendor_manifest_repo
           MANIFEST_REPO_NAME: 'rdkcentral/vendor-manifest-raspberrypi'
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          BASE_BRANCH: develop
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
             cd vendor_manifest_repo
             python3 ../tools/build_health_check_workflow_scripts/auto_pr_generation_manifest.py
@@ -97,7 +97,7 @@ jobs:
           MANIFEST_REPO_PATH: ${{ github.workspace }}/middleware_manifest_repo
           MANIFEST_REPO_NAME: 'rdkcentral/middleware-manifest-rdke'
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          BASE_BRANCH: develop
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
             cd middleware_manifest_repo
             python3 ../tools/build_health_check_workflow_scripts/auto_pr_generation_manifest.py
@@ -110,7 +110,7 @@ jobs:
           MANIFEST_REPO_PATH: ${{ github.workspace }}/image_assembler_manifest_repo
           MANIFEST_REPO_NAME: 'rdkcentral/image-assembler-manifest-rdke'
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          BASE_BRANCH: develop
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
             cd image_assembler_manifest_repo
             python3 ../tools/build_health_check_workflow_scripts/auto_pr_generation_manifest.py
