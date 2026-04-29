@@ -255,7 +255,7 @@ def delete_branch(repo, branch_name):
     print(':{}'.format(branch_name))
     try:
         remote = repo.remote(name='origin')
-        remote.push(refspec=(':delete_me'))
+        remote.push(refspec=(':{}'.format(branch_name)))
     except GitCommandError as e:
         print("Error delete branch: {}".format(str(e)))
         sys.exit(1)
