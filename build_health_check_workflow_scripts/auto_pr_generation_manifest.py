@@ -251,11 +251,11 @@ def create_or_checkout_branch(repo, branch_name, base_branch):
 
 # Delete the unused branch in the remote manifest repository
 def delete_branch(repo, branch_name):
-    print("Delete unsed branch: {}".format(branch_name))
+    print("Delete unused branch: {}".format(branch_name))
     print(':{}'.format(branch_name))
     try:
         remote = repo.remote(name='origin')
-#        remote.push(refspec=(':delete_me'))
+        remote.push(refspec=(':delete_me'))
     except GitCommandError as e:
         print("Error delete branch: {}".format(str(e)))
         sys.exit(1)
