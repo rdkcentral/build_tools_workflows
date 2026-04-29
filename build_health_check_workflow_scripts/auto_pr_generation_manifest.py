@@ -204,7 +204,7 @@ def create_pull_request(github_token, repo_name, head_branch, base_branch, title
 
     try:
         pr = repo.create_pull(title=title, body=description, base=base_branch, head=head_branch)
-        pr.add_to_labels('bhc-auto-merge')
+#        pr.add_to_labels('bhc-auto-merge')
         print("PR Created and labeled:", pr.html_url)
         return pr
     except github.GithubException as e:
