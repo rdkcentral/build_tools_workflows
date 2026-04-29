@@ -249,6 +249,17 @@ def create_or_checkout_branch(repo, branch_name, base_branch):
         print("Error checking out branch: {}".format(str(e)))
         sys.exit(1)
 
+# Delete the unused branch in the remote manifest repository
+def delete_branch(repo, branch_name):
+    print("Delete unsed branch: {}".format(branch_name))
+    print(':{}'.format(branch_name))
+    try:
+        remote = repo.remote(name='origin')
+#        remote.push(refspec=(':delete_me'))
+    except GitCommandError as e:
+        print("Error delete branch: {}".format(str(e)))
+        sys.exit(1)
+
 def main():
     github_token = os.getenv('GITHUB_TOKEN')
     manifest_repo_path = os.getenv('MANIFEST_REPO_PATH')
@@ -290,8 +301,12 @@ def main():
     
     changes_made = update_xml_files(manifest_repo_path, updates)
     if changes_made:  
-      commit_and_push(manifest_repo_path, "Update manifest for {}".format(','.join(updates.keys())))
-      create_pull_request(github_token, manifest_repo_name, feature_branch, base_branch, manifest_pr_title, manifest_pr_description)
+        commit_and_push(manifest_repo_path, "Update manifest for {}".format(','.join(updates.keys())))
+        create_pull_request(github_token, manifest_repo_name, feature_branch, base_branch, manifest_pr_title, manifest_pr_description)
+    else:
+        # delete the unused feature branch
+        delete_branch(repo, feature_branch)
+
 
 if __name__ == '__main__':
     main()
