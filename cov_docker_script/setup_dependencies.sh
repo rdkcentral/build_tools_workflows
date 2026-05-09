@@ -39,7 +39,13 @@ initialize_environment() {
         [[ -d "$BUILD_DIR" ]] && rm -rf "$BUILD_DIR"
         [[ -d "$USR_DIR" ]] && rm -rf "$USR_DIR"
     fi
-    
+
+    # Rebuild if requested
+    if [[ "${RE_BUILD:-false}" == "true" ]]; then
+        warn "Removing previous build completed flags"
+        [[ -d "$BUILD_DIR" ]] && find "$BUILD_DIR" -type f -name 'build_*.done' -print -delete
+    fi
+
     # Create directories
     mkdir -p "$BUILD_DIR"
     mkdir -p "$USR_DIR/include/rdkb"
@@ -98,6 +104,15 @@ build_repository() {
     
     if [[ -z "$build_type" ]]; then
         log "No build configuration for $name (headers only)"
+        return 0
+    fi
+
+    local LATEST_SHA="$(get_latest_sha "$repo_dir")"
+    if [ -f "$repo_dir/build_${LATEST_SHA}.done" ]; then
+        # Copy libraries
+        copy_libraries "$repo_dir" "$USR_DIR/local/lib"
+        copy_libraries "$repo_dir" "$USR_DIR/lib"
+        log "Build alredy done for SHA: $LATEST_SHA, skipping."
         return 0
     fi
     
@@ -174,6 +189,7 @@ build_repository() {
     copy_libraries "$repo_dir" "$USR_DIR/lib"
     
     ok "$name build completed"
+    touch "$repo_dir/build_${LATEST_SHA}.done"
     return 0
 }
 
