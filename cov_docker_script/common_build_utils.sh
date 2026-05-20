@@ -49,15 +49,8 @@ clone_repo() {
         return 0
     fi
     
-    # Use GITHUB_TOKEN if available and repo is from github.com
-    local clone_url="$repo"
-    if [[ -n "$GITHUB_TOKEN" ]] && [[ "$repo" == *"github.com"* ]]; then
-        # Replace https://github.com with https://TOKEN@github.com
-        clone_url="${repo//https:\/\/github.com/https://${GITHUB_TOKEN}@github.com}"
-    fi
-    
     log "Cloning $name (branch: $branch)"
-    if ! git clone --branch "$branch" "$clone_url" "$dest" --depth 1; then
+    if ! git clone --branch "$branch" "$repo" "$dest" --depth 1; then
         err "Failed to clone $name"
         return 1
     fi
