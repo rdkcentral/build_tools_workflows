@@ -40,6 +40,16 @@ check_dependencies() {
     return 0
 }
 
+# Get latest commit id
+get_latest_sha() {
+    local repo_path="$1"
+
+    git -C "$repo_path" rev-parse -is-inside-work-tree >/dev/null 2>&1 \
+        || { echo "Invalid git repo"; return 1; }
+
+    git -C "$repo_path" rev-parse --short HEAD
+}
+
 # Clone a git repository
 clone_repo() {
     local name="$1" repo="$2" branch="$3" dest="$4"
