@@ -112,7 +112,7 @@ build_repository() {
         # Copy libraries
         copy_libraries "$repo_dir" "$USR_DIR/local/lib"
         copy_libraries "$repo_dir" "$USR_DIR/lib"
-        log "Build alredy done for SHA: $LATEST_SHA, skipping."
+        log "Build already done for SHA: $LATEST_SHA, skipping rebuild."
         return 0
     fi
     
