@@ -23,17 +23,17 @@ jobs:
         password: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
-        
+        uses: actions/checkout@v5
+
       - name: Checkout ignore projects file
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: rdkcentral/build_tools_workflows
           sparse-checkout: |
             ignore_projects_fossid
           ref: 1.0.0
           path: tools
-        
+
       - name: Run fossid-toolbox
         env:
           FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
