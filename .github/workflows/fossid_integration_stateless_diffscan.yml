@@ -13,36 +13,25 @@ on:
         required: true
 
 jobs:
-  run-diffscan:
+  run-fossid-cicd:
     name: Fossid Annotate PR
     runs-on: ubuntu-latest
     container:
-      image: quay.io/fossid/fossid-toolbox:1.5.29
+      image: quay.io/fossid/fossid-cicd:0.2.15
       credentials:
-        username: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
-        password: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
+        username:  ${{ secrets.FOSSID_CONTAINER_USERNAME }}
+        password: '${{ secrets.FOSSID_CONTAINER_PASSWORD }}'
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v5
-
-      - name: Checkout ignore projects file
-        uses: actions/checkout@v5
-        with:
-          repository: rdkcentral/build_tools_workflows
-          sparse-checkout: |
-            ignore_projects_fossid
-          ref: develop
-          path: tools
-
-      - name: Run fossid-toolbox
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run fossid-cicd
         env:
           FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
           FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
         run: |
-          fossid \
-            diffscan \
-            --fossid-host $FOSSID_HOST_USERNAME \
-            --fossid-token $FOSSID_HOST_TOKEN \
-            --format github \
-            --fail \
-            --ignore-projects tools/ignore_projects_fossid
+          fossid-cicd \
+          diff-scan \
+          --fossid-host $FOSSID_HOST_USERNAME \
+          --fossid-token $FOSSID_HOST_TOKEN \
+          --github-workflow-errors \
+          --fail-on-any-issues 1
