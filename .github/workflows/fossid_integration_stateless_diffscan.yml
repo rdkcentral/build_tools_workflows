@@ -2,6 +2,22 @@ name: Fossid Pre-merge Stateless Diff Scan
 
 on:
   workflow_call:
+    inputs:
+      base_ref:                          # NEW: optional explicit base ref
+        description: 'Base ref for diff (e.g. develop). Empty = auto-detect.'
+        required: false
+        type: string
+        default: ''
+      compare_ref:                       # NEW: optional explicit compare ref
+        description: 'Compare ref/SHA for diff. Empty = auto-detect.'
+        required: false
+        type: string
+        default: ''
+      pr_number:                         # NEW: PR number (for fetching fork commits)
+        description: 'PR number (used to fetch fork head ref). Empty = not needed.'
+        required: false
+        type: string
+        default: ''
     secrets:
       FOSSID_CONTAINER_USERNAME:
         required: true
@@ -24,6 +40,20 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0                             # Full clone to ensure base ref is available
+
+      # NEW STEP: container runs as different user than checkout — mark safe
+      - name: Mark workspace safe
+        if: inputs.pr_number != ''
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # NEW STEP: fetch the fork PR's head commits (not in origin by default)
+      - name: Fetch PR head ref
+        if: inputs.pr_number != ''
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: git fetch origin pull/$PR_NUMBER/head
 
       - name: Checkout ignore projects file
         uses: actions/checkout@v5
@@ -33,16 +63,24 @@ jobs:
             ignore_projects_fossid
           ref: develop
           path: tools
-
+        
       - name: Run fossid-toolbox
         env:
           FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
           FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
+          BASE_REF: ${{ inputs.base_ref }}
+          COMPARE_REF: ${{ inputs.compare_ref }}
         run: |
+          # NEW: build explicit ref args when provided, otherwise let fossid auto-detect
+          REF_ARGS=""
+          if [ -n "$BASE_REF" ] && [ -n "$COMPARE_REF" ]; then
+            REF_ARGS="--base-ref origin/$BASE_REF --compare-ref $COMPARE_REF"
+          fi
           fossid \
             diffscan \
             --fossid-host $FOSSID_HOST_USERNAME \
             --fossid-token $FOSSID_HOST_TOKEN \
             --format github \
             --fail \
-            --ignore-projects tools/ignore_projects_fossid
+            --ignore-projects tools/ignore_projects_fossid \
+            $REF_ARGS
