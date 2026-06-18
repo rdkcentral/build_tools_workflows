@@ -1,0 +1,71 @@
+name: Update Meta on Component Repo Merge
+
+on:
+  workflow_call:
+    secrets:
+      RDKCM_RDKE:
+        required: true
+
+jobs:
+  auto_pr_creation_meta:
+    runs-on: ubuntu-latest
+    #if: github.event.pull_request.merged == true
+    steps:
+      - name: Checkout build_tools_workflows code
+        uses: actions/checkout@v4
+        with:
+          repository: rdkcentral/build_tools_workflows
+          path: 'tools'
+          ref: RDKEMW-4778
+          token: ${{ secrets.RDKCM_RDKE }}
+
+      - name: Checkout Meta Repository
+        uses: actions/checkout@v4
+        with:
+          repository: 'rdkcentral/meta-rdk-video'
+          path: 'meta_repo'
+          ref: RDKEMW-4778
+          token: ${{ secrets.RDKCM_RDKE }}
+      
+      - name: Checkout meta-middleware-generic-support
+        uses: actions/checkout@v4
+        with:
+          repository: 'rdkcentral/meta-middleware-generic-support'
+          path: 'rdkcentral/meta-middleware-generic-support'
+          ref: RDKEMW-4778
+          token: ${{ secrets.RDKCM_RDKE }}
+
+      - name: Update Git Config
+        env:
+          BOT_EMAIL: ${{ vars.RDKM_BOT_EMAIL }}
+        run: |
+            cd meta_repo
+            git config user.name "bot"
+            git config user.email "$BOT_EMAIL"
+            cd ..
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install requests PyGithub GitPython packaging
+
+      - name: Run the update script
+        env:
+          GITHUB_TOKEN: ${{ secrets.RDKCM_RDKE }}
+          GITHUB_ORG: 'rdkcentral'
+          META_REPO_PATH: ${{ github.workspace }}/meta_repo
+          META_REPO_NAME: 'rdkcentral/meta-rdk-video'
+          GENERIC_SUPPORT_PATH: ${{ github.workspace }}/rdkcentral/meta-middleware-generic-support
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_BRANCH: test_develop
+          GIT_COMMITTER_NAME: "bot"
+          GIT_COMMITTER_EMAIL: ${{ vars.RDKM_BOT_EMAIL }}
+        run: |
+          cd meta_repo
+          python3 ../tools/build_health_check_workflow_scripts/auto_pr_generation_meta.py
+          cd ..
