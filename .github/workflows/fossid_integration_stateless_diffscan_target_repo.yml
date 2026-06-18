@@ -1,13 +1,63 @@
 name: Fossid Stateless Diff Scan
 
-on: 
+on:
   pull_request:
-    branches:
-      - develop
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:                          # NEW: manual trigger
+    inputs:
+      pr_number:
+        description: 'PR number to scan (including fork PRs)'
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
-  call-fossid-workflow:
-    uses: rdkcentral/build_tools_workflows/.github/workflows/fossid_integration_stateless_diffscan.yml@develop
-    secrets: 
+  # Automatic scan for internal PRs (same repo, not a fork)
+  call-fossid-pr:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    uses: rdkcentral/build_tools_workflows/.github/workflows/fossid_integration_stateless_diffscan.yml@1.0.0
+    secrets:
+        FOSSID_CONTAINER_USERNAME: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
+        FOSSID_CONTAINER_PASSWORD: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
+        FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
+        FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
+
+  # Manual scan for any PR (including fork PRs) — step 1: resolve refs
+  resolve-pr-refs:
+    name: Resolve PR Refs
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      base_ref: ${{ steps.pr.outputs.base_ref }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+    steps:
+      - name: Get PR details
+        id: pr
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const prNumber = parseInt(context.payload.inputs.pr_number, 10);
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            core.setOutput('base_ref', pr.base.ref);
+            core.setOutput('head_sha', pr.head.sha);
+
+  # Manual scan for any PR (including fork PRs) — step 2: run fossid with explicit refs
+  call-fossid-dispatch:
+    if: github.event_name == 'workflow_dispatch'
+    needs: [resolve-pr-refs]
+    uses: rdkcentral/build_tools_workflows/.github/workflows/fossid_integration_stateless_diffscan.yml@1.0.0
+    with:
+      base_ref: ${{ needs.resolve-pr-refs.outputs.base_ref }}
+      compare_ref: ${{ needs.resolve-pr-refs.outputs.head_sha }}
+      pr_number: ${{ github.event.inputs.pr_number }}
+    secrets:
         FOSSID_CONTAINER_USERNAME: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
         FOSSID_CONTAINER_PASSWORD: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
         FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
