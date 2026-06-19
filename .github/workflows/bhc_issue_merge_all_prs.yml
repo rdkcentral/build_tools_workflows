@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout build_tools_workflows code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         repository: rdkcentral/build_tools_workflows
         path: 'tools'
@@ -23,7 +23,7 @@ jobs:
         token: ${{ secrets.RDKCM_RDKE }}
 
     - name: Setup Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v6
       with:
         python-version: '3.x'
 
