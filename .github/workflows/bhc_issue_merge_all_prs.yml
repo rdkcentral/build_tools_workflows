@@ -14,27 +14,27 @@ jobs:
   merge_prs:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout build_tools_workflows code
-      uses: actions/checkout@v5
-      with:
-        repository: rdkcentral/build_tools_workflows
-        path: 'tools'
-        ref: develop
-        token: ${{ secrets.RDKCM_RDKE }}
+      - name: Checkout build_tools_workflows code
+        uses: actions/checkout@v5
+        with:
+          repository: rdkcentral/build_tools_workflows
+          path: 'tools'
+          ref: develop
+          token: ${{ secrets.RDKCM_RDKE }}
 
-    - name: Setup Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.x'
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
 
-    - name: Install dependencies
-      run: |
-        python3 -m pip install --upgrade pip
-        pip3 install requests
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip3 install requests
 
-    - name: Merge Pull Requests
-      env:
-        GITHUB_TOKEN: ${{ secrets.RDKCM_RDKE }}
-        ISSUE_URL: ${{ github.event.inputs.issueURL }}
-      run: |
-        python3 tools/build_health_check_workflow_scripts/merge_prs_for_issue.py ${{ github.event.inputs.issueNumber }} ${{ github.repository }}
+      - name: Merge Pull Requests
+        env:
+          GITHUB_TOKEN: ${{ secrets.RDKCM_RDKE }}
+          ISSUE_URL: ${{ github.event.inputs.issueURL }}
+        run: |
+          python3 tools/build_health_check_workflow_scripts/merge_prs_for_issue.py ${{ github.event.inputs.issueNumber }} ${{ github.repository }}
