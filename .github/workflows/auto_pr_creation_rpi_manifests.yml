@@ -12,7 +12,7 @@ jobs:
     if: github.event.pull_request.merged == true
     steps:
       - name: Checkout build_tools_workflows code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: rdkcentral/build_tools_workflows
           path: 'tools'
@@ -20,7 +20,7 @@ jobs:
           token: ${{ secrets.RDKCM_RDKE }}
 
       - name: Checkout vendor layer Manifest Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: 'rdkcentral/vendor-manifest-raspberrypi'
           path: 'vendor_manifest_repo'
@@ -36,7 +36,7 @@ jobs:
             cd ..
 
       - name: Checkout middleware layer Manifest Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: 'rdkcentral/middleware-manifest-rdke'
           path: 'middleware_manifest_repo'
@@ -52,7 +52,7 @@ jobs:
             cd ..
 
       - name: Checkout image assembler layer Manifest Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: 'rdkcentral/image-assembler-manifest-rdke'
           path: 'image_assembler_manifest_repo'
@@ -68,7 +68,7 @@ jobs:
             cd ..
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: '3.x'
 
