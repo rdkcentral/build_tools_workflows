@@ -45,7 +45,6 @@ jobs:
 
       # NEW STEP: container runs as different user than checkout — mark safe
       - name: Mark workspace safe
-        if: inputs.pr_number != ''
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       # NEW STEP: fetch the fork PR's head commits (not in origin by default)
