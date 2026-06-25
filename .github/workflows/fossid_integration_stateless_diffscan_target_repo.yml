@@ -8,7 +8,7 @@ on:
       pr_number:
         description: 'PR number to scan (including fork PRs)'
         required: true
-        type: number
+        type: string
 
 permissions:
   contents: read
