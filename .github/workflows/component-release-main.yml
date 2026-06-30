@@ -1,4 +1,4 @@
-name: Component Release
+name: Component Release main
 
 permissions:
   contents: write
