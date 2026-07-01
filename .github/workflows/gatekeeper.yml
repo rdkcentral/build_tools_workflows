@@ -46,6 +46,8 @@ jobs:
           # 4. Evaluate peer approval state for each discovered PR
           CURRENT_PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
           UNAPPROVED_PRS=0
+          BLOCKED_LIST=""
+          APPROVED_LIST=""
 
           for row in $(echo "$SISTER_PRS" | jq -r '.[] | @base64'); do
             _jq() {
@@ -67,15 +69,37 @@ jobs:
             if [ "$REVIEW_STATUS" != "APPROVED" ]; then
               echo "❌ Gate Lock: $PR_URL is missing peer approval (Current status: $REVIEW_STATUS)"
               UNAPPROVED_PRS=$((UNAPPROVED_PRS + 1))
+              BLOCKED_LIST="${BLOCKED_LIST}\n| ❌ | ${PR_URL} | ${REVIEW_STATUS} |"
             else
               echo "✅ Gate Clear: $PR_URL is approved."
+              APPROVED_LIST="${APPROVED_LIST}\n| ✅ | ${PR_URL} | APPROVED |"
             fi
           done
 
-          # 5. Enforce the Gerrit-style gate closure if dependencies are incomplete
+          # 5. Build summary report
+          SUMMARY="## 🔒 Cross-Repo Gatekeeper Report\n\n"
+          SUMMARY+="**Topic Keys:** ${SEARCH_QUERY}\n"
+          SUMMARY+="**Total Sister PRs Found:** $((COUNT - 1)) (excluding self)\n\n"
+          SUMMARY+="| Status | Pull Request | Review State |\n"
+          SUMMARY+="|--------|-------------|-------------|\n"
+          if [ -n "$BLOCKED_LIST" ]; then
+            SUMMARY+=$(echo -e "$BLOCKED_LIST")
+            SUMMARY+="\n"
+          fi
+          if [ -n "$APPROVED_LIST" ]; then
+            SUMMARY+=$(echo -e "$APPROVED_LIST")
+            SUMMARY+="\n"
+          fi
+
+          # Write to Job Summary (visible in check details UI)
+          echo -e "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+
+          # 6. Enforce the Gerrit-style gate closure if dependencies are incomplete
           if [ "$UNAPPROVED_PRS" -gt 0 ]; then
+            echo -e "\n> **⛔ Merge Blocked:** ${UNAPPROVED_PRS} sister PR(s) still awaiting approval." >> "$GITHUB_STEP_SUMMARY"
             echo "Error: Cannot merge. One or more cross-repository components in this topic sequence are still in review."
             exit 1
           fi
 
+          echo -e "\n> **✅ All Clear:** All sister PRs are approved. Safe to merge." >> "$GITHUB_STEP_SUMMARY"
           echo "Success: All cross-repository PRs for this topic cluster are approved! Safe to merge."
