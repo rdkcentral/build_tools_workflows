@@ -38,7 +38,7 @@ jobs:
           ORG_NAME=$(echo "$REPO" | cut -d'/' -f1)
           echo "Scanning organization '$ORG_NAME' for open dependent components..."
 
-          SISTER_PRS=$(gh search prs --org "$ORG_NAME" "${SEARCH_QUERY}" --state open --json url,repository)
+          SISTER_PRS=$(gh search prs "${SEARCH_QUERY}" --owner "$ORG_NAME" --state open --json url,repository)
 
           COUNT=$(echo "$SISTER_PRS" | jq '. | length')
           echo "Found $COUNT open PR(s) linked to this topic group."
