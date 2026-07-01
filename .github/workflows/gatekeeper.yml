@@ -1,0 +1,74 @@
+name: Shared Cross-Repo Gatekeeper
+
+on:
+  workflow_call: # Allows this script to be called by your other 50+ component repos
+
+jobs:
+  check-reviews:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify All Sister PRs Are Approved
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # 1. Fetch current PR title and description body text together
+          PR_DATA=$(gh pr view "$PR_NUMBER" -R "$REPO" --json title,body)
+          PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
+          PR_BODY=$(echo "$PR_DATA" | jq -r '.body')
+
+          echo "Analyzing PR metadata for tracking keys..."
+
+          # 2. Extract ALL unique uppercase tracking keys using Regex
+          # (Handles brackets, colons, typos in spacing, and multiple stacked keys)
+          ALL_IDS=$(echo -e "${PR_TITLE}\n${PR_BODY}" | grep -oE '[A-Z0-9]+-[0-9]+' | sort -u)
+
+          if [ -z "$ALL_IDS" ]; then
+            echo "No uppercase topic/ticket keys found. Skipping cross-repo validation."
+            exit 0
+          fi
+
+          # Convert the newline list into a clean GitHub OR search query string
+          # Example output format: "RDKCOM-5536" OR "RDKBDEV-3380"
+          SEARCH_QUERY=$(echo "$ALL_IDS" | tr '\n' ' ' | sed 's/ $//' | sed 's/ /" OR "/g' | sed 's/^/"/' | sed 's/$/"/')
+          echo "Active Topic Identifiers: $SEARCH_QUERY"
+
+          # 3. Search for ALL open PRs across the organization matching ANY extracted keys
+          ORG_NAME=$(echo "$REPO" | cut -d'/' -f1)
+          echo "Scanning organization '$ORG_NAME' for open dependent components..."
+
+          SISTER_PRS=$(gh search prs --org "$ORG_NAME" "${SEARCH_QUERY}" --state open --json url,repository)
+
+          COUNT=$(echo "$SISTER_PRS" | jq '. | length')
+          echo "Found $COUNT open PR(s) linked to this topic group."
+
+          # 4. Evaluate peer approval state for each discovered PR
+          UNAPPROVED_PRS=0
+
+          for row in $(echo "$SISTER_PRS" | jq -r '.[] | @base64'); do
+            _jq() {
+              echo ${row} | base64 --decode | jq -r ${1}
+            }
+            PR_URL=$(_jq '.url')
+
+            echo "Evaluating: $PR_URL"
+
+            # Fetch the official review state (APPROVED, CHANGES_REQUESTED, or REVIEW_REQUIRED)
+            REVIEW_STATUS=$(gh pr view "$PR_URL" --json reviewDecision --jq '.reviewDecision' 2>/dev/null || echo "REVIEW_REQUIRED")
+
+            if [ "$REVIEW_STATUS" != "APPROVED" ]; then
+              echo "❌ Gate Lock: $PR_URL is missing peer approval (Current status: $REVIEW_STATUS)"
+              UNAPPROVED_PRS=$((UNAPPROVED_PRS + 1))
+            else
+              echo "✅ Gate Clear: $PR_URL is approved."
+            fi
+          done
+
+          # 5. Enforce the Gerrit-style gate closure if dependencies are incomplete
+          if [ "$UNAPPROVED_PRS" -gt 0 ]; then
+            echo "Error: Cannot merge. One or more cross-repository components in this topic sequence are still in review."
+            exit 1
+          fi
+
+          echo "Success: All cross-repository PRs for this topic cluster are approved! Safe to merge."
