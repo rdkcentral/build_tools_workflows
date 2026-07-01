@@ -44,6 +44,7 @@ jobs:
           echo "Found $COUNT open PR(s) linked to this topic group."
 
           # 4. Evaluate peer approval state for each discovered PR
+          CURRENT_PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
           UNAPPROVED_PRS=0
 
           for row in $(echo "$SISTER_PRS" | jq -r '.[] | @base64'); do
@@ -51,6 +52,12 @@ jobs:
               echo ${row} | base64 --decode | jq -r ${1}
             }
             PR_URL=$(_jq '.url')
+
+            # Skip the current PR itself
+            if [ "$PR_URL" == "$CURRENT_PR_URL" ]; then
+              echo "⏭️ Skipping self: $PR_URL"
+              continue
+            fi
 
             echo "Evaluating: $PR_URL"
 
