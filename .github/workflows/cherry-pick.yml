@@ -101,7 +101,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           # Get the merge commit and find the original commits
-          MERGE_SHA=${{ github.event.pull_request.merge_commit_sha }}
+          MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
           COMMITS=$(git log --pretty=format:"%H" ${MERGE_SHA}^1..${MERGE_SHA}^2 2>/dev/null || echo "$MERGE_SHA")
           # For squash merges, use the merge commit itself
           if [ -z "$COMMITS" ]; then
@@ -126,9 +126,7 @@ jobs:
 
           if [ "$CONFLICT" = "true" ]; then
             # Post failure comment
-            gh pr comment "$PR_URL" --body "⚠️ **Cherry-pick to \`$TARGET_BRANCH\` failed due to merge conflicts.**
-
-Please resolve the conflicts manually, create a PR targeting \`$TARGET_BRANCH\`, and ensure the changes are applied correctly."
+            gh pr comment "$PR_URL" --body "$(printf '⚠️ **Cherry-pick to \x60%s\x60 failed due to merge conflicts.**\n\nPlease resolve the conflicts manually, create a PR targeting \x60%s\x60, and ensure the changes are applied correctly.' "$TARGET_BRANCH" "$TARGET_BRANCH")"
             echo "Cherry-pick failed due to conflicts."
             exit 0
           fi
