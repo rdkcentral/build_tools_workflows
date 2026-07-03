@@ -35,6 +35,17 @@ jobs:
           echo "target_branch=$TARGET_BRANCH" >> $GITHUB_OUTPUT
           echo "custom_topic=$CUSTOM_TOPIC" >> $GITHUB_OUTPUT
 
+          # 3. Build branch-suffixed topic label for the cherry-picked PR
+          #    e.g. topic:billing-v2 → topic:billing-v2_stable2 (for support/stable2)
+          #    e.g. topic:billing-v2 → topic:billing-v2_8.6_p1b (for release/8.6_p1b)
+          BACKPORT_LABEL=""
+          if [ -n "$CUSTOM_TOPIC" ]; then
+            BRANCH_SUFFIX=$(echo "$TARGET_BRANCH" | sed 's|^support/||; s|^release/||')
+            BACKPORT_LABEL="${CUSTOM_TOPIC}_${BRANCH_SUFFIX}"
+            echo "Backport label for cherry-picked PR: $BACKPORT_LABEL"
+          fi
+          echo "backport_label=$BACKPORT_LABEL" >> $GITHUB_OUTPUT
+
           # 2. THE CHAIN REACTION: If a topic label exists, find and tag sister PRs
           if [ -n "$CUSTOM_TOPIC" ]; then
             echo "Found topic label '$CUSTOM_TOPIC'. Searching for sister PRs to auto-trigger..."
@@ -76,5 +87,5 @@ jobs:
         with:
           target_branches: ${{ steps.parse_meta.outputs.target_branch }}
           pr_title: '${pull_request.title}'
-          pr_labels: ${{ steps.parse_meta.outputs.custom_topic }}
+          pr_labels: ${{ steps.parse_meta.outputs.backport_label }}
           auth_token: ${{ secrets.GITHUB_TOKEN }}
