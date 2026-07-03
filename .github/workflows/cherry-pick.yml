@@ -87,6 +87,5 @@ jobs:
         uses: korthout/backport-action@v3
         with:
           target_branches: ${{ steps.parse_meta.outputs.target_branch }}
-          pull_title: '${pull_request.title}'
           add_labels: ${{ steps.parse_meta.outputs.backport_label }}
           github_token: ${{ secrets.CROSS_REPO_TOKEN || secrets.GITHUB_TOKEN }}
