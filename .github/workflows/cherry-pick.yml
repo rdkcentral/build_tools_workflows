@@ -162,8 +162,12 @@ jobs:
           fi
 
           if [ "$CONFLICT" = "true" ]; then
-            # Post failure comment
-            gh pr comment "$PR_URL" --body "$(printf '⚠️ **Cherry-pick to \x60%s\x60 failed due to merge conflicts.**\n\nPlease resolve the conflicts manually, create a PR targeting \x60%s\x60, and ensure the changes are applied correctly.' "$TARGET_BRANCH" "$TARGET_BRANCH")"
+            # Post failure comment with label hint if applicable
+            LABEL_HINT=""
+            if [ -n "$BACKPORT_LABEL" ]; then
+              LABEL_HINT=$(printf '\n\n> **Tip:** Add the \x60%s\x60 label to your manual PR for cross-repo tracking.' "$BACKPORT_LABEL")
+            fi
+            gh pr comment "$PR_URL" --body "$(printf '⚠️ **Cherry-pick to \x60%s\x60 failed due to merge conflicts.**\n\nPlease resolve the conflicts manually and create a PR targeting \x60%s\x60.%s' "$TARGET_BRANCH" "$TARGET_BRANCH" "$LABEL_HINT")"
             echo "Cherry-pick failed due to conflicts."
             exit 0
           fi
