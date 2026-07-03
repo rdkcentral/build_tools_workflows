@@ -63,14 +63,21 @@ jobs:
             local state_flag="$1"
             local base_flag="$2"
             local results="[]"
+            local merged_flag=""
+
+            # gh search prs --state only accepts open|closed. For merged, use --state closed --merged
+            if [ "$state_flag" == "merged" ]; then
+              state_flag="closed"
+              merged_flag="--merged"
+            fi
 
             # Search by ticket keys
             if [ -n "$ALL_IDS" ]; then
               KEY_QUERY=$(echo "$ALL_IDS" | tr '\n' ' ' | sed 's/ $//' | sed 's/ /" OR "/g' | sed 's/^/"/' | sed 's/$/"/')
               if [ -n "$base_flag" ]; then
-                KEY_RESULTS=$(gh search prs "${KEY_QUERY}" --owner "$ORG_NAME" --state "$state_flag" --base "$base_flag" --json url,repository 2>/dev/null || echo "[]")
+                KEY_RESULTS=$(gh search prs "${KEY_QUERY}" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --base "$base_flag" --json url,repository 2>/dev/null || echo "[]")
               else
-                KEY_RESULTS=$(gh search prs "${KEY_QUERY}" --owner "$ORG_NAME" --state "$state_flag" --json url,repository 2>/dev/null || echo "[]")
+                KEY_RESULTS=$(gh search prs "${KEY_QUERY}" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --json url,repository 2>/dev/null || echo "[]")
               fi
               results=$(echo "$results $KEY_RESULTS" | jq -s 'add')
             fi
@@ -78,9 +85,9 @@ jobs:
             # Search by topic label (separate query using --label flag)
             if [ -n "$CUSTOM_TOPIC" ]; then
               if [ -n "$base_flag" ]; then
-                LABEL_RESULTS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state "$state_flag" --base "$base_flag" --json url,repository 2>/dev/null || echo "[]")
+                LABEL_RESULTS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --base "$base_flag" --json url,repository 2>/dev/null || echo "[]")
               else
-                LABEL_RESULTS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state "$state_flag" --json url,repository 2>/dev/null || echo "[]")
+                LABEL_RESULTS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --json url,repository 2>/dev/null || echo "[]")
               fi
               results=$(echo "$results $LABEL_RESULTS" | jq -s 'add')
             fi
