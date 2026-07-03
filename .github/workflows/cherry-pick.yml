@@ -140,13 +140,26 @@ jobs:
 
           # Attempt cherry-pick
           CONFLICT=false
+          EMPTY=false
           for COMMIT in $COMMITS; do
             if ! git cherry-pick -x "$COMMIT" 2>/dev/null; then
-              CONFLICT=true
-              git cherry-pick --abort 2>/dev/null || true
+              # Check if it's an empty cherry-pick (commit already applied)
+              if git diff --cached --quiet 2>/dev/null && [ -z "$(git diff)" ]; then
+                EMPTY=true
+                git cherry-pick --abort 2>/dev/null || true
+              else
+                CONFLICT=true
+                git cherry-pick --abort 2>/dev/null || true
+              fi
               break
             fi
           done
+
+          if [ "$EMPTY" = "true" ]; then
+            gh pr comment "$PR_URL" --body "$(printf 'ℹ️ **Cherry-pick to \x60%s\x60 skipped:** The changes already exist on the target branch.\n\nNo action needed — this commit was likely already applied manually.' "$TARGET_BRANCH")"
+            echo "Cherry-pick skipped: changes already on target branch."
+            exit 0
+          fi
 
           if [ "$CONFLICT" = "true" ]; then
             # Post failure comment
