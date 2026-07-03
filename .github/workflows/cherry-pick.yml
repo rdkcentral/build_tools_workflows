@@ -134,8 +134,8 @@ jobs:
             exit 0
           fi
 
-          # Push the branch
-          git push origin "$CHERRY_PICK_BRANCH"
+          # Push the branch (force to stay idempotent across re-runs)
+          git push --force origin "$CHERRY_PICK_BRANCH"
 
           # Build label args
           LABEL_ARGS=""
@@ -143,6 +143,13 @@ jobs:
             # Ensure the branch-suffixed topic label exists before using it
             gh label create "$BACKPORT_LABEL" --repo "$REPO" --color "0e8a16" --force >/dev/null 2>&1 || true
             LABEL_ARGS="--label $BACKPORT_LABEL"
+          fi
+
+          # Create the PR only if one doesn't already exist for this branch
+          EXISTING_PR=$(gh pr list --repo "$REPO" --head "$CHERRY_PICK_BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING_PR" ]; then
+            echo "ℹ️ Cherry-pick PR #$EXISTING_PR already exists for $CHERRY_PICK_BRANCH. Updated branch."
+            exit 0
           fi
 
           # Create the PR
