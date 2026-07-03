@@ -28,40 +28,36 @@ jobs:
           CURRENT_PR_URL: ${{ github.event.pull_request.html_url }}
           EVENT_LABEL: ${{ github.event.label.name }}
         run: |
-          # 1. Parse the target destination branch and custom topic label
+          # 1. Parse the target destination branch(es) and custom topic label
           # Prefer the event label (the label that was just added) over grepping the full list
           TRIGGER_LABEL="${{ inputs.trigger_label }}"
           # If caller didn't pass trigger_label, try from event context directly
           if [ -z "$TRIGGER_LABEL" ]; then
             TRIGGER_LABEL="$EVENT_LABEL"
           fi
+
           if [[ "$TRIGGER_LABEL" == cherry-pick\ to\ * ]]; then
-            TARGET_LABEL="$TRIGGER_LABEL"
+            # Single target from labeled event
+            TARGET_BRANCHES="${TRIGGER_LABEL#cherry-pick to }"
           else
-            # Fallback for 'closed' events (merge with pre-existing labels)
-            TARGET_LABEL=$(echo '${{ inputs.raw_labels }}' | jq -r '.[] | .name' | grep "cherry-pick to " | head -n 1)
+            # Fallback for 'closed' events: process ALL cherry-pick labels (handles pre-merge labeling)
+            TARGET_BRANCHES=$(echo '${{ inputs.raw_labels }}' | jq -r '.[] | .name' | grep "cherry-pick to " | sed 's/cherry-pick to //' || true)
           fi
-          TARGET_BRANCH=${TARGET_LABEL#"cherry-pick to "}
+
           CUSTOM_TOPIC=$(echo '${{ inputs.raw_labels }}' | jq -r '.[] | .name' | grep "^topic:" | head -n 1)
 
-          if [ -z "$TARGET_BRANCH" ]; then
+          if [ -z "$TARGET_BRANCHES" ]; then
             echo "No valid cherry-pick destination branch found. Exiting."
             exit 0
           fi
 
-          echo "target_branch=$TARGET_BRANCH" >> $GITHUB_OUTPUT
+          # Output as newline-separated list for multi-target support
+          echo "target_branches<<EOF" >> $GITHUB_OUTPUT
+          echo "$TARGET_BRANCHES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
           echo "custom_topic=$CUSTOM_TOPIC" >> $GITHUB_OUTPUT
 
-          # 3. Build branch-suffixed topic label for the cherry-picked PR
-          #    e.g. topic:billing-v2 → topic:billing-v2_stable2 (for support/stable2)
-          #    e.g. topic:billing-v2 → topic:billing-v2_8.6_p1b (for release/8.6_p1b)
-          BACKPORT_LABEL=""
-          if [ -n "$CUSTOM_TOPIC" ]; then
-            BRANCH_SUFFIX=$(echo "$TARGET_BRANCH" | sed 's|^support/||; s|^release/||; s|^feature/||')
-            BACKPORT_LABEL="${CUSTOM_TOPIC}_${BRANCH_SUFFIX}"
-            echo "Backport label for cherry-picked PR: $BACKPORT_LABEL"
-          fi
-          echo "backport_label=$BACKPORT_LABEL" >> $GITHUB_OUTPUT
+          echo "Target branches: $(echo $TARGET_BRANCHES | tr '\n' ', ')"
 
           # 2. THE CHAIN REACTION: If a topic label exists, find and tag sister PRs
           if [ -n "$CUSTOM_TOPIC" ]; then
@@ -81,34 +77,39 @@ jobs:
                 continue
               fi
 
-              # Guard: skip if sister PR already has the cherry-pick label (prevents infinite loop)
-              EXISTING_LABELS=$(echo ${row} | base64 --decode | jq -r '.labels[].name' 2>/dev/null)
-              if echo "$EXISTING_LABELS" | grep -qF "$TARGET_LABEL"; then
-                echo "⏭️ Already labeled: $SISTER_URL"
-                continue
-              fi
+              # Propagate ALL target labels to sister PRs
+              while IFS= read -r BRANCH; do
+                [ -z "$BRANCH" ] && continue
+                LABEL_TO_ADD="cherry-pick to $BRANCH"
 
-              echo "🔗 Propagating '$TARGET_LABEL' to sister PR: $SISTER_URL"
-              # Ensure the cherry-pick label exists in the sister repo before adding
-              SISTER_REPO=$(echo "$SISTER_URL" | sed -E 's|https://github.com/([^/]+/[^/]+)/pull/.*|\1|')
-              gh label create "$TARGET_LABEL" --repo "$SISTER_REPO" --color "d93f0b" --force >/dev/null 2>&1 || true
-              gh pr edit "$SISTER_URL" --add-label "$TARGET_LABEL" 2>/dev/null || echo "⚠️ Could not label $SISTER_URL (check token permissions)"
+                # Guard: skip if sister PR already has this label (prevents infinite loop)
+                EXISTING_LABELS=$(echo ${row} | base64 --decode | jq -r '.labels[].name' 2>/dev/null)
+                if echo "$EXISTING_LABELS" | grep -qF "$LABEL_TO_ADD"; then
+                  echo "⏭️ Already labeled ($LABEL_TO_ADD): $SISTER_URL"
+                  continue
+                fi
+
+                echo "🔗 Propagating '$LABEL_TO_ADD' to sister PR: $SISTER_URL"
+                SISTER_REPO=$(echo "$SISTER_URL" | sed -E 's|https://github.com/([^/]+/[^/]+)/pull/.*|\1|')
+                gh label create "$LABEL_TO_ADD" --repo "$SISTER_REPO" --color "d93f0b" --force >/dev/null 2>&1 || true
+                gh pr edit "$SISTER_URL" --add-label "$LABEL_TO_ADD" 2>/dev/null || echo "⚠️ Could not label $SISTER_URL (check token permissions)"
+              done <<< "$TARGET_BRANCHES"
             done
           fi
 
       - name: Checkout Code
-        if: steps.parse_meta.outputs.target_branch != ''
+        if: steps.parse_meta.outputs.target_branches != ''
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.CROSS_REPO_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Execute Cherry-Pick
-        if: steps.parse_meta.outputs.target_branch != ''
+        if: steps.parse_meta.outputs.target_branches != ''
         env:
           GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN || secrets.GITHUB_TOKEN }}
-          TARGET_BRANCH: ${{ steps.parse_meta.outputs.target_branch }}
-          BACKPORT_LABEL: ${{ steps.parse_meta.outputs.backport_label }}
+          TARGET_BRANCHES: ${{ steps.parse_meta.outputs.target_branches }}
+          CUSTOM_TOPIC: ${{ steps.parse_meta.outputs.custom_topic }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_URL: ${{ github.event.pull_request.html_url }}
@@ -123,80 +124,97 @@ jobs:
           # Get the merge commit and find the original commits
           MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
           COMMITS=$(git log --pretty=format:"%H" ${MERGE_SHA}^1..${MERGE_SHA}^2 2>/dev/null || echo "$MERGE_SHA")
-          # For squash merges, use the merge commit itself
           if [ -z "$COMMITS" ]; then
             COMMITS="$MERGE_SHA"
           fi
 
-          CHERRY_PICK_BRANCH="cherry-pick-${PR_NUMBER}-to-$(echo $TARGET_BRANCH | sed 's|/|-|g')"
+          # Process each target branch
+          while IFS= read -r TARGET_BRANCH; do
+            [ -z "$TARGET_BRANCH" ] && continue
+            echo ""
+            echo "=========================================="
+            echo "🎯 Cherry-picking to: $TARGET_BRANCH"
+            echo "=========================================="
 
-          # Verify target branch exists
-          if ! git fetch origin "$TARGET_BRANCH" 2>/dev/null; then
-            gh pr comment "$PR_URL" --body "$(printf '❌ **Cherry-pick failed:** Target branch \x60%s\x60 does not exist.\n\nPlease check the label for typos and ensure the branch has been created.' "$TARGET_BRANCH")"
-            echo "Error: Target branch '$TARGET_BRANCH' does not exist."
-            exit 0
-          fi
-          git checkout -b "$CHERRY_PICK_BRANCH" "origin/$TARGET_BRANCH"
+            CHERRY_PICK_BRANCH="cherry-pick-${PR_NUMBER}-to-$(echo $TARGET_BRANCH | sed 's|/|-|g')"
 
-          # Attempt cherry-pick
-          CONFLICT=false
-          EMPTY=false
-          for COMMIT in $COMMITS; do
-            if ! git cherry-pick -x "$COMMIT" 2>/dev/null; then
-              # Check if it's an empty cherry-pick (commit already applied)
-              if git diff --cached --quiet 2>/dev/null && [ -z "$(git diff)" ]; then
-                EMPTY=true
-                git cherry-pick --abort 2>/dev/null || true
-              else
-                CONFLICT=true
-                git cherry-pick --abort 2>/dev/null || true
+            # Build backport label
+            BACKPORT_LABEL=""
+            if [ -n "$CUSTOM_TOPIC" ]; then
+              BRANCH_SUFFIX=$(echo "$TARGET_BRANCH" | sed 's|^support/||; s|^release/||; s|^feature/||')
+              BACKPORT_LABEL="${CUSTOM_TOPIC}_${BRANCH_SUFFIX}"
+            fi
+
+            # Verify target branch exists
+            if ! git fetch origin "$TARGET_BRANCH" 2>/dev/null; then
+              gh pr comment "$PR_URL" --body "$(printf '❌ **Cherry-pick failed:** Target branch \x60%s\x60 does not exist.\n\nPlease check the label for typos and ensure the branch has been created.' "$TARGET_BRANCH")"
+              echo "Error: Target branch '$TARGET_BRANCH' does not exist. Skipping."
+              continue
+            fi
+
+            # Create cherry-pick branch
+            git checkout -b "$CHERRY_PICK_BRANCH" "origin/$TARGET_BRANCH"
+
+            # Attempt cherry-pick
+            CONFLICT=false
+            EMPTY=false
+            for COMMIT in $COMMITS; do
+              if ! git cherry-pick -x "$COMMIT" 2>/dev/null; then
+                if git diff --cached --quiet 2>/dev/null && [ -z "$(git diff)" ]; then
+                  EMPTY=true
+                  git cherry-pick --abort 2>/dev/null || true
+                else
+                  CONFLICT=true
+                  git cherry-pick --abort 2>/dev/null || true
+                fi
+                break
               fi
-              break
+            done
+
+            if [ "$EMPTY" = "true" ]; then
+              gh pr comment "$PR_URL" --body "$(printf 'ℹ️ **Cherry-pick to \x60%s\x60 skipped:** The changes already exist on the target branch.\n\nNo action needed — this commit was likely already applied manually.' "$TARGET_BRANCH")"
+              echo "Cherry-pick skipped: changes already on $TARGET_BRANCH."
+              git checkout --detach 2>/dev/null; git branch -D "$CHERRY_PICK_BRANCH" 2>/dev/null || true
+              continue
             fi
-          done
 
-          if [ "$EMPTY" = "true" ]; then
-            gh pr comment "$PR_URL" --body "$(printf 'ℹ️ **Cherry-pick to \x60%s\x60 skipped:** The changes already exist on the target branch.\n\nNo action needed — this commit was likely already applied manually.' "$TARGET_BRANCH")"
-            echo "Cherry-pick skipped: changes already on target branch."
-            exit 0
-          fi
+            if [ "$CONFLICT" = "true" ]; then
+              LABEL_HINT=""
+              if [ -n "$BACKPORT_LABEL" ]; then
+                LABEL_HINT=$(printf '\n\n> **Tip:** Add the \x60%s\x60 label to your manual PR for cross-repo tracking.' "$BACKPORT_LABEL")
+              fi
+              gh pr comment "$PR_URL" --body "$(printf '⚠️ **Cherry-pick to \x60%s\x60 failed due to merge conflicts.**\n\nPlease resolve the conflicts manually and create a PR targeting \x60%s\x60.%s' "$TARGET_BRANCH" "$TARGET_BRANCH" "$LABEL_HINT")"
+              echo "Cherry-pick to $TARGET_BRANCH failed due to conflicts."
+              git checkout --detach 2>/dev/null; git branch -D "$CHERRY_PICK_BRANCH" 2>/dev/null || true
+              continue
+            fi
 
-          if [ "$CONFLICT" = "true" ]; then
-            # Post failure comment with label hint if applicable
-            LABEL_HINT=""
+            # Push the branch (force for idempotency)
+            git push --force origin "$CHERRY_PICK_BRANCH"
+
+            # Build label args
+            LABEL_ARGS=""
             if [ -n "$BACKPORT_LABEL" ]; then
-              LABEL_HINT=$(printf '\n\n> **Tip:** Add the \x60%s\x60 label to your manual PR for cross-repo tracking.' "$BACKPORT_LABEL")
+              gh label create "$BACKPORT_LABEL" --repo "$REPO" --color "0e8a16" --force >/dev/null 2>&1 || true
+              LABEL_ARGS="--label $BACKPORT_LABEL"
             fi
-            gh pr comment "$PR_URL" --body "$(printf '⚠️ **Cherry-pick to \x60%s\x60 failed due to merge conflicts.**\n\nPlease resolve the conflicts manually and create a PR targeting \x60%s\x60.%s' "$TARGET_BRANCH" "$TARGET_BRANCH" "$LABEL_HINT")"
-            echo "Cherry-pick failed due to conflicts."
-            exit 0
-          fi
 
-          # Push the branch (force to stay idempotent across re-runs)
-          git push --force origin "$CHERRY_PICK_BRANCH"
+            # Create PR only if one doesn't already exist
+            EXISTING_PR=$(gh pr list --repo "$REPO" --head "$CHERRY_PICK_BRANCH" --state open --json number --jq '.[0].number // empty')
+            if [ -n "$EXISTING_PR" ]; then
+              echo "ℹ️ Cherry-pick PR #$EXISTING_PR already exists for $CHERRY_PICK_BRANCH. Updated branch."
+              git checkout --detach 2>/dev/null; git branch -D "$CHERRY_PICK_BRANCH" 2>/dev/null || true
+              continue
+            fi
 
-          # Build label args
-          LABEL_ARGS=""
-          if [ -n "$BACKPORT_LABEL" ]; then
-            # Ensure the branch-suffixed topic label exists before using it
-            gh label create "$BACKPORT_LABEL" --repo "$REPO" --color "0e8a16" --force >/dev/null 2>&1 || true
-            LABEL_ARGS="--label $BACKPORT_LABEL"
-          fi
+            gh pr create \
+              --repo "$REPO" \
+              --head "$CHERRY_PICK_BRANCH" \
+              --base "$TARGET_BRANCH" \
+              --title "$PR_TITLE" \
+              --body "Cherry-pick of #${PR_NUMBER} to \`$TARGET_BRANCH\`." \
+              $LABEL_ARGS
 
-          # Create the PR only if one doesn't already exist for this branch
-          EXISTING_PR=$(gh pr list --repo "$REPO" --head "$CHERRY_PICK_BRANCH" --state open --json number --jq '.[0].number // empty')
-          if [ -n "$EXISTING_PR" ]; then
-            echo "ℹ️ Cherry-pick PR #$EXISTING_PR already exists for $CHERRY_PICK_BRANCH. Updated branch."
-            exit 0
-          fi
-
-          # Create the PR
-          gh pr create \
-            --repo "$REPO" \
-            --head "$CHERRY_PICK_BRANCH" \
-            --base "$TARGET_BRANCH" \
-            --title "$PR_TITLE" \
-            --body "Cherry-pick of #${PR_NUMBER} to \`$TARGET_BRANCH\`." \
-            $LABEL_ARGS
-
-          echo "✅ Cherry-pick PR created successfully."
+            echo "✅ Cherry-pick PR created for $TARGET_BRANCH."
+            git checkout --detach 2>/dev/null; git branch -D "$CHERRY_PICK_BRANCH" 2>/dev/null || true
+          done <<< "$TARGET_BRANCHES"
