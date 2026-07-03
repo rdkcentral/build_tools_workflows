@@ -77,16 +77,78 @@ jobs:
           fi
 
       - name: Checkout Code
+        if: steps.parse_meta.outputs.target_branch != ''
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.CROSS_REPO_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: Execute Automated Cherry-Pick For This Repo
+      - name: Execute Cherry-Pick
         if: steps.parse_meta.outputs.target_branch != ''
-        uses: korthout/backport-action@v3
-        with:
-          target_branches: ${{ steps.parse_meta.outputs.target_branch }}
-          pull_title: '${pull_title}'
-          add_labels: ${{ steps.parse_meta.outputs.backport_label }}
-          github_token: ${{ secrets.CROSS_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+        env:
+          GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          TARGET_BRANCH: ${{ steps.parse_meta.outputs.target_branch }}
+          BACKPORT_LABEL: ${{ steps.parse_meta.outputs.backport_label }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Get the merge commit and find the original commits
+          MERGE_SHA=${{ github.event.pull_request.merge_commit_sha }}
+          COMMITS=$(git log --pretty=format:"%H" ${MERGE_SHA}^1..${MERGE_SHA}^2 2>/dev/null || echo "$MERGE_SHA")
+          # For squash merges, use the merge commit itself
+          if [ -z "$COMMITS" ]; then
+            COMMITS="$MERGE_SHA"
+          fi
+
+          CHERRY_PICK_BRANCH="cherry-pick-${PR_NUMBER}-to-$(echo $TARGET_BRANCH | sed 's|/|-|g')"
+
+          # Create branch from target
+          git fetch origin "$TARGET_BRANCH"
+          git checkout -b "$CHERRY_PICK_BRANCH" "origin/$TARGET_BRANCH"
+
+          # Attempt cherry-pick
+          CONFLICT=false
+          for COMMIT in $COMMITS; do
+            if ! git cherry-pick -x "$COMMIT" 2>/dev/null; then
+              CONFLICT=true
+              git cherry-pick --abort 2>/dev/null || true
+              break
+            fi
+          done
+
+          if [ "$CONFLICT" = "true" ]; then
+            # Post failure comment
+            gh pr comment "$PR_URL" --body "⚠️ **Cherry-pick to \`$TARGET_BRANCH\` failed due to merge conflicts.**
+
+Please resolve the conflicts manually, create a PR targeting \`$TARGET_BRANCH\`, and ensure the changes are applied correctly."
+            echo "Cherry-pick failed due to conflicts."
+            exit 0
+          fi
+
+          # Push the branch
+          git push origin "$CHERRY_PICK_BRANCH"
+
+          # Build label args
+          LABEL_ARGS=""
+          if [ -n "$BACKPORT_LABEL" ]; then
+            LABEL_ARGS="--label $BACKPORT_LABEL"
+          fi
+
+          # Create the PR
+          gh pr create \
+            --repo "$REPO" \
+            --head "$CHERRY_PICK_BRANCH" \
+            --base "$TARGET_BRANCH" \
+            --title "$PR_TITLE" \
+            --body "Cherry-pick of #${PR_NUMBER} to \`$TARGET_BRANCH\`." \
+            $LABEL_ARGS
+
+          echo "✅ Cherry-pick PR created successfully."
