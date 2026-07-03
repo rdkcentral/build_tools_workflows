@@ -26,10 +26,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN || secrets.GITHUB_TOKEN }}
           CURRENT_PR_URL: ${{ github.event.pull_request.html_url }}
+          EVENT_LABEL: ${{ github.event.label.name }}
         run: |
           # 1. Parse the target destination branch and custom topic label
-          # Prefer the specific trigger_label (from labeled event) over grepping the full list
+          # Prefer the event label (the label that was just added) over grepping the full list
           TRIGGER_LABEL="${{ inputs.trigger_label }}"
+          # If caller didn't pass trigger_label, try from event context directly
+          if [ -z "$TRIGGER_LABEL" ]; then
+            TRIGGER_LABEL="$EVENT_LABEL"
+          fi
           if [[ "$TRIGGER_LABEL" == cherry-pick\ to\ * ]]; then
             TARGET_LABEL="$TRIGGER_LABEL"
           else
