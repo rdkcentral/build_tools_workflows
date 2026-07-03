@@ -40,7 +40,7 @@ jobs:
           #    e.g. topic:billing-v2 → topic:billing-v2_8.6_p1b (for release/8.6_p1b)
           BACKPORT_LABEL=""
           if [ -n "$CUSTOM_TOPIC" ]; then
-            BRANCH_SUFFIX=$(echo "$TARGET_BRANCH" | sed 's|^support/||; s|^release/||')
+            BRANCH_SUFFIX=$(echo "$TARGET_BRANCH" | sed 's|^support/||; s|^release/||; s|^feature/||')
             BACKPORT_LABEL="${CUSTOM_TOPIC}_${BRANCH_SUFFIX}"
             echo "Backport label for cherry-picked PR: $BACKPORT_LABEL"
           fi
