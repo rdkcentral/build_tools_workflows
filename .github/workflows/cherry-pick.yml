@@ -7,6 +7,11 @@ on:
         description: 'JSON array of labels from the triggering PR event'
         required: true
         type: string
+      trigger_label:
+        description: 'The specific label that triggered this event (from github.event.label.name). Empty for closed events.'
+        required: false
+        type: string
+        default: ''
     secrets:
       CROSS_REPO_TOKEN:
         description: 'PAT with org-wide repo write access for cross-repo label propagation'
@@ -23,7 +28,14 @@ jobs:
           CURRENT_PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
           # 1. Parse the target destination branch and custom topic label
-          TARGET_LABEL=$(echo '${{ inputs.raw_labels }}' | jq -r '.[] | .name' | grep "cherry-pick to " | head -n 1)
+          # Prefer the specific trigger_label (from labeled event) over grepping the full list
+          TRIGGER_LABEL="${{ inputs.trigger_label }}"
+          if [[ "$TRIGGER_LABEL" == cherry-pick\ to\ * ]]; then
+            TARGET_LABEL="$TRIGGER_LABEL"
+          else
+            # Fallback for 'closed' events (merge with pre-existing labels)
+            TARGET_LABEL=$(echo '${{ inputs.raw_labels }}' | jq -r '.[] | .name' | grep "cherry-pick to " | head -n 1)
+          fi
           TARGET_BRANCH=${TARGET_LABEL#"cherry-pick to "}
           CUSTOM_TOPIC=$(echo '${{ inputs.raw_labels }}' | jq -r '.[] | .name' | grep "^topic:" | head -n 1)
 
@@ -113,8 +125,12 @@ jobs:
 
           CHERRY_PICK_BRANCH="cherry-pick-${PR_NUMBER}-to-$(echo $TARGET_BRANCH | sed 's|/|-|g')"
 
-          # Create branch from target
-          git fetch origin "$TARGET_BRANCH"
+          # Verify target branch exists
+          if ! git fetch origin "$TARGET_BRANCH" 2>/dev/null; then
+            gh pr comment "$PR_URL" --body "$(printf '❌ **Cherry-pick failed:** Target branch \x60%s\x60 does not exist.\n\nPlease check the label for typos and ensure the branch has been created.' "$TARGET_BRANCH")"
+            echo "Error: Target branch '$TARGET_BRANCH' does not exist."
+            exit 0
+          fi
           git checkout -b "$CHERRY_PICK_BRANCH" "origin/$TARGET_BRANCH"
 
           # Attempt cherry-pick
