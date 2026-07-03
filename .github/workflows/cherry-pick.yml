@@ -72,6 +72,9 @@ jobs:
               fi
 
               echo "🔗 Propagating '$TARGET_LABEL' to sister PR: $SISTER_URL"
+              # Ensure the cherry-pick label exists in the sister repo before adding
+              SISTER_REPO=$(echo "$SISTER_URL" | sed -E 's|https://github.com/([^/]+/[^/]+)/pull/.*|\1|')
+              gh label create "$TARGET_LABEL" --repo "$SISTER_REPO" --color "d93f0b" --force >/dev/null 2>&1 || true
               gh pr edit "$SISTER_URL" --add-label "$TARGET_LABEL" 2>/dev/null || echo "⚠️ Could not label $SISTER_URL (check token permissions)"
             done
           fi
@@ -137,6 +140,8 @@ jobs:
           # Build label args
           LABEL_ARGS=""
           if [ -n "$BACKPORT_LABEL" ]; then
+            # Ensure the branch-suffixed topic label exists before using it
+            gh label create "$BACKPORT_LABEL" --repo "$REPO" --color "0e8a16" --force >/dev/null 2>&1 || true
             LABEL_ARGS="--label $BACKPORT_LABEL"
           fi
 
