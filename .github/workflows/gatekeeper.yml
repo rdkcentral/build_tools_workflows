@@ -58,16 +58,47 @@ jobs:
           # ==========================================
           MISSING_CHERRY_PICK_LIST=""
 
+          # Helper: Run ticket key search + topic label search separately, then merge & deduplicate
+          run_search() {
+            local state_flag="$1"
+            local base_flag="$2"
+            local results="[]"
+
+            # Search by ticket keys
+            if [ -n "$ALL_IDS" ]; then
+              KEY_QUERY=$(echo "$ALL_IDS" | tr '\n' ' ' | sed 's/ $//' | sed 's/ /" OR "/g' | sed 's/^/"/' | sed 's/$/"/')
+              if [ -n "$base_flag" ]; then
+                KEY_RESULTS=$(gh search prs "${KEY_QUERY}" --owner "$ORG_NAME" --state "$state_flag" --base "$base_flag" --json url,repository 2>/dev/null || echo "[]")
+              else
+                KEY_RESULTS=$(gh search prs "${KEY_QUERY}" --owner "$ORG_NAME" --state "$state_flag" --json url,repository 2>/dev/null || echo "[]")
+              fi
+              results=$(echo "$results $KEY_RESULTS" | jq -s 'add')
+            fi
+
+            # Search by topic label (separate query using --label flag)
+            if [ -n "$CUSTOM_TOPIC" ]; then
+              if [ -n "$base_flag" ]; then
+                LABEL_RESULTS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state "$state_flag" --base "$base_flag" --json url,repository 2>/dev/null || echo "[]")
+              else
+                LABEL_RESULTS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state "$state_flag" --json url,repository 2>/dev/null || echo "[]")
+              fi
+              results=$(echo "$results $LABEL_RESULTS" | jq -s 'add')
+            fi
+
+            # Deduplicate by URL
+            echo "$results" | jq 'unique_by(.url)'
+          }
+
           # Isolate search to the target branch if running on a strict production track
           if [[ "$TARGET_BRANCH" =~ ^(release|support)/ ]]; then
             echo "🕵️ Stable/Release track detected. Auditing original development footprint..."
 
             # Narrow open PR search strictly to this specific target release/support branch
-            SISTER_PRS=$(gh search prs "${SEARCH_QUERY}" --owner "$ORG_NAME" --state open --base "$TARGET_BRANCH" --json url,repository)
+            SISTER_PRS=$(run_search "open" "$TARGET_BRANCH")
             REPOS_WITH_RELEASE_PRS=$(echo "$SISTER_PRS" | jq -r '.[].repository.name' | sort -u)
 
             # Find where this cluster originally landed historically on the develop branch
-            HISTORICAL_PRS=$(gh search prs "${SEARCH_QUERY}" --owner "$ORG_NAME" --state merged --base "develop" --json repository)
+            HISTORICAL_PRS=$(run_search "merged" "develop")
             ORIGINAL_REPOS=$(echo "$HISTORICAL_PRS" | jq -r '.[].repository.name' | sort -u)
 
             while read -r repo; do
@@ -78,7 +109,7 @@ jobs:
             done <<< "$ORIGINAL_REPOS"
           else
             # Standard develop branch workflow: Scan all open matches across the organization globally
-            SISTER_PRS=$(gh search prs "${SEARCH_QUERY}" --owner "$ORG_NAME" --state open --json url,repository)
+            SISTER_PRS=$(run_search "open" "")
           fi
 
           COUNT=$(echo "$SISTER_PRS" | jq '. | length')
