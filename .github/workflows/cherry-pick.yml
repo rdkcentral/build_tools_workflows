@@ -1,0 +1,46 @@
+name: Shared Cherry-Pick Engine
+
+on:
+  workflow_call:
+    inputs:
+      raw_labels:
+        description: 'JSON array of labels from the triggering PR event'
+        required: true
+        type: string
+
+jobs:
+  backport:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract Branch and Topic Metadata
+        id: parse_meta
+        run: |
+          # 1. Parse the target destination branch
+          TARGET_BRANCH=$(echo '${{ inputs.raw_labels }}' | jq -r '.[] | .name' | grep "cherry-pick to " | head -n 1 | sed 's/cherry-pick to //')
+
+          # 2. Extract the user-defined custom topic label if it exists
+          CUSTOM_TOPIC=$(echo '${{ inputs.raw_labels }}' | jq -r '.[] | .name' | grep "^topic:" | head -n 1)
+
+          if [ -z "$TARGET_BRANCH" ]; then
+            echo "No valid cherry-pick destination branch found. Exiting."
+            exit 0
+          fi
+
+          echo "target_branch=$TARGET_BRANCH" >> $GITHUB_OUTPUT
+          echo "custom_topic=$CUSTOM_TOPIC" >> $GITHUB_OUTPUT
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Execute Automated Cherry-Pick
+        if: steps.parse_meta.outputs.target_branch != ''
+        uses: korthout/backport-action@v3
+        with:
+          target_branches: ${{ steps.parse_meta.outputs.target_branch }}
+          # Retains the exact original PR title with no added branch prefixes
+          pr_title: '${pull_request.title}'
+          # Automatically carries over the user's dynamic topic label to the new stable PR
+          pr_labels: ${{ steps.parse_meta.outputs.custom_topic }}
+          auth_token: ${{ secrets.GITHUB_TOKEN }}
