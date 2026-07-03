@@ -7,18 +7,24 @@ on:
         description: 'JSON array of labels from the triggering PR event'
         required: true
         type: string
+    secrets:
+      CROSS_REPO_TOKEN:
+        description: 'PAT with org-wide repo write access for cross-repo label propagation'
+        required: false
 
 jobs:
   backport:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract Branch and Topic Metadata
+      - name: Extract Metadata & Propagate to Sister PRs
         id: parse_meta
+        env:
+          GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          CURRENT_PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          # 1. Parse the target destination branch
-          TARGET_BRANCH=$(echo '${{ inputs.raw_labels }}' | jq -r '.[] | .name' | grep "cherry-pick to " | head -n 1 | sed 's/cherry-pick to //')
-
-          # 2. Extract the user-defined custom topic label if it exists
+          # 1. Parse the target destination branch and custom topic label
+          TARGET_LABEL=$(echo '${{ inputs.raw_labels }}' | jq -r '.[] | .name' | grep "cherry-pick to " | head -n 1)
+          TARGET_BRANCH=${TARGET_LABEL#"cherry-pick to "}
           CUSTOM_TOPIC=$(echo '${{ inputs.raw_labels }}' | jq -r '.[] | .name' | grep "^topic:" | head -n 1)
 
           if [ -z "$TARGET_BRANCH" ]; then
@@ -29,18 +35,46 @@ jobs:
           echo "target_branch=$TARGET_BRANCH" >> $GITHUB_OUTPUT
           echo "custom_topic=$CUSTOM_TOPIC" >> $GITHUB_OUTPUT
 
+          # 2. THE CHAIN REACTION: If a topic label exists, find and tag sister PRs
+          if [ -n "$CUSTOM_TOPIC" ]; then
+            echo "Found topic label '$CUSTOM_TOPIC'. Searching for sister PRs to auto-trigger..."
+            ORG_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f1)
+
+            # Find all merged PRs across the org sharing this exact topic label
+            SISTER_PRS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state merged --json url,labels 2>/dev/null || echo "[]")
+
+            for row in $(echo "$SISTER_PRS" | jq -r '.[] | @base64'); do
+              _jq() { echo ${row} | base64 --decode | jq -r ${1}; }
+              SISTER_URL=$(_jq '.url')
+
+              # Skip the current PR (already running)
+              if [ "$SISTER_URL" == "$CURRENT_PR_URL" ]; then
+                echo "⏭️ Skipping self: $SISTER_URL"
+                continue
+              fi
+
+              # Guard: skip if sister PR already has the cherry-pick label (prevents infinite loop)
+              EXISTING_LABELS=$(echo ${row} | base64 --decode | jq -r '.labels[].name' 2>/dev/null)
+              if echo "$EXISTING_LABELS" | grep -qF "$TARGET_LABEL"; then
+                echo "⏭️ Already labeled: $SISTER_URL"
+                continue
+              fi
+
+              echo "🔗 Propagating '$TARGET_LABEL' to sister PR: $SISTER_URL"
+              gh pr edit "$SISTER_URL" --add-label "$TARGET_LABEL" 2>/dev/null || echo "⚠️ Could not label $SISTER_URL (check token permissions)"
+            done
+          fi
+
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Execute Automated Cherry-Pick
+      - name: Execute Automated Cherry-Pick For This Repo
         if: steps.parse_meta.outputs.target_branch != ''
         uses: korthout/backport-action@v3
         with:
           target_branches: ${{ steps.parse_meta.outputs.target_branch }}
-          # Retains the exact original PR title with no added branch prefixes
           pr_title: '${pull_request.title}'
-          # Automatically carries over the user's dynamic topic label to the new stable PR
           pr_labels: ${{ steps.parse_meta.outputs.custom_topic }}
           auth_token: ${{ secrets.GITHUB_TOKEN }}
