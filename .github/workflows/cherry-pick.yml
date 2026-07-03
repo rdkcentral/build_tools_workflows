@@ -52,7 +52,7 @@ jobs:
             ORG_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f1)
 
             # Find all merged PRs across the org sharing this exact topic label
-            SISTER_PRS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state merged --json url,labels 2>/dev/null || echo "[]")
+            SISTER_PRS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state closed --merged --json url,labels 2>/dev/null || echo "[]")
 
             for row in $(echo "$SISTER_PRS" | jq -r '.[] | @base64'); do
               _jq() { echo ${row} | base64 --decode | jq -r ${1}; }
