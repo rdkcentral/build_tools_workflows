@@ -15,9 +15,6 @@ on:
 jobs:
   backport:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
       - name: Extract Metadata & Propagate to Sister PRs
         id: parse_meta
