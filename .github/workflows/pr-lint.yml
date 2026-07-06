@@ -58,26 +58,43 @@ jobs:
 
           # ==========================================
           # 3. CHECK FIELDS ARE NOT EMPTY
+          #    Content can be on the same line or the next line
           # ==========================================
           if [ -z "$MISSING_FIELDS" ]; then
             EMPTY_FIELDS=""
 
-            REASON=$(echo "$PR_BODY" | grep -iA1 '^[[:space:]]*Reason for change[[:space:]]*:' | tail -1 | sed 's/^[[:space:]]*//')
-            if [ -z "$REASON" ] || echo "$REASON" | grep -qiE '^(Test Procedure|Risks|Priority)[[:space:]]*:'; then
+            # Extract content after "Field:" on the same line, or on the next line
+            get_field_content() {
+              local FIELD="$1"
+              # First try: content after colon on the same line
+              local INLINE=$(echo "$PR_BODY" | grep -i "^[[:space:]]*${FIELD}[[:space:]]*:" | sed -E "s/^[^:]*:[[:space:]]*//" | head -1)
+              if [ -n "$INLINE" ]; then
+                echo "$INLINE"
+              else
+                # Fallback: content on the next line
+                echo "$PR_BODY" | grep -iA1 "^[[:space:]]*${FIELD}[[:space:]]*:" | tail -1 | sed 's/^[[:space:]]*//'
+              fi
+            }
+
+            REASON=$(get_field_content "Reason for change")
+            if [ -z "$REASON" ]; then
               EMPTY_FIELDS+="  - \`Reason for change\` is empty\n"
             fi
 
-            TEST=$(echo "$PR_BODY" | grep -iA1 '^[[:space:]]*Test Procedure[[:space:]]*:' | tail -1 | sed 's/^[[:space:]]*//')
-            if [ -z "$TEST" ] || echo "$TEST" | grep -qiE '^(Reason for change|Risks|Priority)[[:space:]]*:'; then
+            TEST=$(get_field_content "Test Procedure")
+            if [ -z "$TEST" ]; then
               EMPTY_FIELDS+="  - \`Test Procedure\` is empty\n"
             fi
 
-            RISKS=$(echo "$PR_BODY" | grep -iA1 '^[[:space:]]*Risks[[:space:]]*:' | tail -1 | sed 's/^[[:space:]]*//')
-            if [ -z "$RISKS" ] || echo "$RISKS" | grep -qiE '^(Reason for change|Test Procedure|Priority)[[:space:]]*:'; then
+            RISKS=$(get_field_content "Risks")
+            if [ -z "$RISKS" ]; then
               EMPTY_FIELDS+="  - \`Risks\` is empty\n"
             fi
 
-            PRIORITY=$(echo "$PR_BODY" | grep -iA1 '^[[:space:]]*Priority[[:space:]]*:' | tail -1 | sed 's/^[[:space:]]*//')
+            PRIORITY=$(get_field_content "Priority")
+            if [ -z "$PRIORITY" ]; then
+              EMPTY_FIELDS+="  - \`Priority\` is empty\n"
+            fi
             if [ -z "$PRIORITY" ] || echo "$PRIORITY" | grep -qiE '^(Reason for change|Test Procedure|Risks)[[:space:]]*:'; then
               EMPTY_FIELDS+="  - \`Priority\` is empty\n"
             fi
