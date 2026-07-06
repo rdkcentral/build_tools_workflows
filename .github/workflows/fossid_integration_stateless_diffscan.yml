@@ -3,17 +3,17 @@ name: Fossid Pre-merge Stateless Diff Scan
 on:
   workflow_call:
     inputs:
-      base_ref:                          # NEW: optional explicit base ref
+      base_ref:                          # optional explicit base ref
         description: 'Base ref for diff (e.g. develop). Empty = auto-detect.'
         required: false
         type: string
         default: ''
-      compare_ref:                       # NEW: optional explicit compare ref
+      compare_ref:                       # optional explicit compare ref / head SHA
         description: 'Compare ref/SHA for diff. Empty = auto-detect.'
         required: false
         type: string
         default: ''
-      pr_number:                         # NEW: PR number (for fetching fork commits)
+      pr_number:                         # PR number (for fetching fork commits)
         description: 'PR number (used to fetch fork head ref). Empty = not needed.'
         required: false
         type: string
@@ -32,6 +32,9 @@ jobs:
   run-diffscan:
     name: Fossid Annotate PR
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write        # create the check run on the PR head SHA
     container:
       image: quay.io/fossid/fossid-toolbox:1.5.29
       credentials:
@@ -43,11 +46,11 @@ jobs:
         with:
           fetch-depth: 0                             # Full clone to ensure base ref is available
 
-      # NEW STEP: container runs as different user than checkout — mark safe
+      # container runs as different user than checkout — mark safe
       - name: Mark workspace safe
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      # NEW STEP: fetch the fork PR's head commits (not in origin by default)
+      # fetch the fork PR's head commits (not in origin by default)
       - name: Fetch PR head ref
         if: inputs.pr_number != ''
         env:
@@ -62,19 +65,23 @@ jobs:
             ignore_projects_fossid
           ref: develop
           path: tools
-        
+
       - name: Run fossid-toolbox
+        id: fossid
         env:
           FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
           FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
           BASE_REF: ${{ inputs.base_ref }}
           COMPARE_REF: ${{ inputs.compare_ref }}
         run: |
-          # NEW: build explicit ref args when provided, otherwise let fossid auto-detect
+          # build explicit ref args when provided, otherwise let fossid auto-detect
           REF_ARGS=""
           if [ -n "$BASE_REF" ] && [ -n "$COMPARE_REF" ]; then
             REF_ARGS="--base-ref origin/$BASE_REF --compare-ref $COMPARE_REF"
           fi
+          # capture output and exit code without failing the step, so we can
+          # publish a check run before enforcing the result
+          set +e
           fossid \
             diffscan \
             --fossid-host $FOSSID_HOST_USERNAME \
@@ -82,4 +89,50 @@ jobs:
             --format github \
             --fail \
             --ignore-projects tools/ignore_projects_fossid \
-            $REF_ARGS
+            $REF_ARGS 2>&1 | tee fossid_output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          set -e
+
+      # Report the result as a check run on the PR head SHA. This is what makes
+      # the result visible on the PR for the manual (workflow_dispatch) path,
+      # where the run executes against the branch tip rather than the PR head.
+      # The head SHA comes from the passed input (dispatch) or the PR event
+      # (automatic PRs), so a single required check covers both triggers.
+      # Findings are shown in the check details rather than parsed per-line.
+      - name: Report FOSSID check run
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          HEAD_SHA: ${{ inputs.compare_ref != '' && inputs.compare_ref || github.event.pull_request.head.sha }}
+          FOSSID_EXIT_CODE: ${{ steps.fossid.outputs.exit_code }}
+        with:
+          script: |
+            const fs = require('fs');
+            const headSha = process.env.HEAD_SHA;
+            if (!headSha) return; // no PR head to attach to
+
+            const passed = process.env.FOSSID_EXIT_CODE === '0';
+            let output = '';
+            try { output = fs.readFileSync('fossid_output.txt', 'utf8'); } catch {}
+
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'FOSSID Stateless Diff Scan',
+              head_sha: headSha,
+              status: 'completed',
+              conclusion: passed ? 'success' : 'failure',
+              output: {
+                title: passed ? 'FOSSID scan passed' : 'FOSSID found issues',
+                summary: passed
+                  ? 'No blocking findings.'
+                  : 'FOSSID reported findings — see details below.',
+                text: output ? '```\n' + output.slice(0, 60000) + '\n```' : undefined,
+              },
+            });
+
+      # Preserve the fail-the-build behaviour of --fail. Default to 1 (fail
+      # closed) if the scan step never recorded an exit code, e.g. it crashed.
+      - name: Enforce scan result
+        if: always()
+        run: exit ${{ steps.fossid.outputs.exit_code || '1' }}
