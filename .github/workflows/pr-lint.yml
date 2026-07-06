@@ -1,0 +1,108 @@
+name: Shared PR Lint
+
+on:
+  workflow_call:
+
+jobs:
+  pr-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR Title & Description Format
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          PR_DATA=$(gh pr view "$PR_NUMBER" -R "$REPO" --json title,body)
+          PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
+          PR_BODY=$(echo "$PR_DATA" | jq -r '.body')
+
+          ISSUES=""
+
+          # ==========================================
+          # 1. CHECK PR TITLE FORMAT
+          #    Expected: <ticket_number> : <brief_description>
+          #    Examples: RDKB-12345 : Fix memory leak in hotspot
+          #              XONE-999 : Add retry logic for connection timeout
+          # ==========================================
+          if ! echo "$PR_TITLE" | grep -qE '^[A-Z]+-[0-9]+ *: *.+'; then
+            ISSUES+="- **Title** does not match expected format: \`<TICKET_NUMBER> : <brief_description>\`\n"
+            ISSUES+="  - Current: \`$PR_TITLE\`\n"
+            ISSUES+="  - Example: \`RDKB-12345 : Fix memory leak in hotspot module\`\n"
+          fi
+
+          # ==========================================
+          # 2. CHECK PR DESCRIPTION FIELDS
+          # ==========================================
+          MISSING_FIELDS=""
+
+          if ! echo "$PR_BODY" | grep -qiE '^[[:space:]]*Reason for change[[:space:]]*:'; then
+            MISSING_FIELDS+="  - \`Reason for change:\`\n"
+          fi
+
+          if ! echo "$PR_BODY" | grep -qiE '^[[:space:]]*Test Procedure[[:space:]]*:'; then
+            MISSING_FIELDS+="  - \`Test Procedure:\`\n"
+          fi
+
+          if ! echo "$PR_BODY" | grep -qiE '^[[:space:]]*Risks[[:space:]]*:'; then
+            MISSING_FIELDS+="  - \`Risks:\`\n"
+          fi
+
+          if ! echo "$PR_BODY" | grep -qiE '^[[:space:]]*Priority[[:space:]]*:'; then
+            MISSING_FIELDS+="  - \`Priority:\`\n"
+          fi
+
+          if [ -n "$MISSING_FIELDS" ]; then
+            ISSUES+="- **Description** is missing required fields:\n$MISSING_FIELDS"
+          fi
+
+          # ==========================================
+          # 3. CHECK FIELDS ARE NOT EMPTY
+          # ==========================================
+          if [ -z "$MISSING_FIELDS" ]; then
+            EMPTY_FIELDS=""
+
+            REASON=$(echo "$PR_BODY" | grep -iA1 '^[[:space:]]*Reason for change[[:space:]]*:' | tail -1 | sed 's/^[[:space:]]*//')
+            if [ -z "$REASON" ] || echo "$REASON" | grep -qiE '^(Test Procedure|Risks|Priority)[[:space:]]*:'; then
+              EMPTY_FIELDS+="  - \`Reason for change\` is empty\n"
+            fi
+
+            TEST=$(echo "$PR_BODY" | grep -iA1 '^[[:space:]]*Test Procedure[[:space:]]*:' | tail -1 | sed 's/^[[:space:]]*//')
+            if [ -z "$TEST" ] || echo "$TEST" | grep -qiE '^(Reason for change|Risks|Priority)[[:space:]]*:'; then
+              EMPTY_FIELDS+="  - \`Test Procedure\` is empty\n"
+            fi
+
+            RISKS=$(echo "$PR_BODY" | grep -iA1 '^[[:space:]]*Risks[[:space:]]*:' | tail -1 | sed 's/^[[:space:]]*//')
+            if [ -z "$RISKS" ] || echo "$RISKS" | grep -qiE '^(Reason for change|Test Procedure|Priority)[[:space:]]*:'; then
+              EMPTY_FIELDS+="  - \`Risks\` is empty\n"
+            fi
+
+            PRIORITY=$(echo "$PR_BODY" | grep -iA1 '^[[:space:]]*Priority[[:space:]]*:' | tail -1 | sed 's/^[[:space:]]*//')
+            if [ -z "$PRIORITY" ] || echo "$PRIORITY" | grep -qiE '^(Reason for change|Test Procedure|Risks)[[:space:]]*:'; then
+              EMPTY_FIELDS+="  - \`Priority\` is empty\n"
+            fi
+
+            if [ -n "$EMPTY_FIELDS" ]; then
+              ISSUES+="- **Description** has empty fields:\n$EMPTY_FIELDS"
+            fi
+          fi
+
+          # ==========================================
+          # 4. POST RESULT (never blocks, only reminds)
+          # ==========================================
+          if [ -n "$ISSUES" ]; then
+            echo "::warning::PR format issues detected (non-blocking)"
+
+            COMMENT=$(printf '📋 **PR Format Reminder**\n\nPlease update your PR to follow the standard format:\n\n%b\n---\n\n**Expected format:**\n\n**Title:** \x60<TICKET_NUMBER> : <brief_description>\x60\n\n**Description:**\n\x60\x60\x60\nReason for change: <why this change is needed>\n\nTest Procedure: <how to verify>\n\nRisks: <potential impact>\n\nPriority: <urgency level>\n\x60\x60\x60\n\n_This is a non-blocking reminder. You can still merge._' "$ISSUES")
+
+            # Only comment if we haven't already commented on this PR
+            EXISTING=$(gh pr view "$PR_NUMBER" -R "$REPO" --json comments --jq '.comments[] | select(.body | contains("PR Format Reminder")) | .id' | head -1)
+            if [ -z "$EXISTING" ]; then
+              gh pr comment "$PR_NUMBER" -R "$REPO" --body "$COMMENT"
+              echo "Posted format reminder comment."
+            else
+              echo "Format reminder already posted. Skipping duplicate comment."
+            fi
+          else
+            echo "✅ PR title and description follow the expected format."
+          fi
