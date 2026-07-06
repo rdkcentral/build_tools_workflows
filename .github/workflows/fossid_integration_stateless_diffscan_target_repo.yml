@@ -12,7 +12,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write   # Fix 1: fossid needs write to post results/comments on the PR
 
 jobs:
   # Automatic scan for internal PRs (same repo, not a fork)
@@ -33,13 +33,21 @@ jobs:
     outputs:
       base_ref: ${{ steps.pr.outputs.base_ref }}
       head_sha: ${{ steps.pr.outputs.head_sha }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
     steps:
       - name: Get PR details
         id: pr
-        uses: actions/github-script@v8
+        uses: actions/github-script@v7   # Fix 2: use the published major version
+        env:
+          PR_NUMBER_INPUT: ${{ github.event.inputs.pr_number }}   # Fix 4: consistent, injection-safe input access
         with:
           script: |
-            const prNumber = parseInt(context.payload.inputs.pr_number, 10);
+            const prNumber = parseInt(process.env.PR_NUMBER_INPUT, 10);
+            // Fix 3: fail fast on invalid input instead of passing NaN to the API
+            if (!Number.isInteger(prNumber) || prNumber <= 0) {
+              core.setFailed(`Invalid PR number: ${process.env.PR_NUMBER_INPUT}`);
+              return;
+            }
             const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -47,6 +55,7 @@ jobs:
             });
             core.setOutput('base_ref', pr.base.ref);
             core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('pr_number', String(prNumber));
 
   # Manual scan for any PR (including fork PRs) — step 2: run fossid with explicit refs
   call-fossid-dispatch:
@@ -56,9 +65,9 @@ jobs:
     with:
       base_ref: ${{ needs.resolve-pr-refs.outputs.base_ref }}
       compare_ref: ${{ needs.resolve-pr-refs.outputs.head_sha }}
-      pr_number: ${{ github.event.inputs.pr_number }}
+      pr_number: ${{ needs.resolve-pr-refs.outputs.pr_number }}   # Fix 4: use validated output, not the raw input
     secrets:
-        FOSSID_CONTAINER_USERNAME: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
-        FOSSID_CONTAINER_PASSWORD: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
-        FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
-        FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
+      FOSSID_CONTAINER_USERNAME: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
+      FOSSID_CONTAINER_PASSWORD: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
+      FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
+      FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
