@@ -79,8 +79,9 @@ jobs:
           if [ -n "$BASE_REF" ] && [ -n "$COMPARE_REF" ]; then
             REF_ARGS="--base-ref origin/$BASE_REF --compare-ref $COMPARE_REF"
           fi
-          # capture output and exit code without failing the step, so we can
-          # publish a check run before enforcing the result
+          # run the scan, capturing output and its exit code without failing the
+          # step, so we can report a check run before enforcing the result.
+          # NOTE: the container shell is POSIX sh, so avoid bash-only PIPESTATUS.
           set +e
           fossid \
             diffscan \
@@ -89,8 +90,10 @@ jobs:
             --format github \
             --fail \
             --ignore-projects tools/ignore_projects_fossid \
-            $REF_ARGS 2>&1 | tee fossid_output.txt
-          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+            $REF_ARGS > fossid_output.txt 2>&1
+          code=$?
+          cat fossid_output.txt
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           set -e
 
       # Report the result as a check run on the PR head SHA. This is what makes
