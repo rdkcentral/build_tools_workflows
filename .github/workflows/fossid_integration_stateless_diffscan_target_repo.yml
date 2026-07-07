@@ -7,9 +7,29 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: fossid-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
-  call-fossid-pr:
+  call-fossid-internal:
     name: FOSSID
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    uses: rdkcentral/build_tools_workflows/.github/workflows/fossid_integration_stateless_diffscan.yml@feature/fossid-wflow-prt
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+      base_ref: ${{ github.event.pull_request.base.ref }}
+      compare_ref: ${{ github.event.pull_request.head.sha }}
+    secrets:
+      FOSSID_CONTAINER_USERNAME: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
+      FOSSID_CONTAINER_PASSWORD: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
+      FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
+      FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
+
+  call-fossid-fork:
+    name: FOSSID
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    environment: fossid-scan
     uses: rdkcentral/build_tools_workflows/.github/workflows/fossid_integration_stateless_diffscan.yml@feature/fossid-wflow-prt
     with:
       pr_number: ${{ github.event.pull_request.number }}
