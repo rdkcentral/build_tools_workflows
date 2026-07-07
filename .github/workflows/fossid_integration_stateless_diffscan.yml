@@ -56,10 +56,20 @@ jobs:
       - name: Mark workspace safe
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Fetch PR head ref
+      - name: Fetch and verify PR head ref
         env:
           PR_NUMBER: ${{ inputs.pr_number }}
-        run: git fetch --no-tags origin "pull/$PR_NUMBER/head:pr-head"
+          COMPARE_REF: ${{ inputs.compare_ref }}
+        run: |
+          # Verify the fetched PR head still matches the event SHA so the scan
+          # result always corresponds to the commit that triggered this run.
+          git fetch --no-tags origin "pull/$PR_NUMBER/head:pr-head"
+          actual_sha="$(git rev-parse pr-head)"
+          if [ "$actual_sha" != "$COMPARE_REF" ]; then
+            echo "Expected PR head SHA $COMPARE_REF but fetched $actual_sha" >&2
+            echo "The PR was updated after this workflow started; rerun on the newer commit." >&2
+            exit 1
+          fi
 
       - name: Checkout ignore projects file
         uses: actions/checkout@v5
