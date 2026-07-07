@@ -1,90 +1,42 @@
-name: Fossid Pre-merge Stateless Diff Scan
+name: Fossid Stateless Diff Scan
 
 on:
-  workflow_call:
-    inputs:
-      base_ref:
-        description: 'Base ref for diff (for example develop)'
-        required: true
-        type: string
-      compare_ref:
-        description: 'Head SHA to compare against'
-        required: true
-        type: string
-      pr_number:
-        description: 'PR number used to fetch the head ref'
-        required: true
-        type: string
-    secrets:
-      # These may come from repository secrets (internal PR path) or from the
-      # caller job's environment-scoped secrets after reviewer approval.
-      FOSSID_CONTAINER_USERNAME:
-        required: true
-      FOSSID_CONTAINER_PASSWORD:
-        required: true
-      FOSSID_HOST_USERNAME:
-        required: true
-      FOSSID_HOST_TOKEN:
-        required: true
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fossid-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
-  run-diffscan:
-    name: Fossid Annotate PR
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    container:
-      image: quay.io/fossid/fossid-toolbox:1.5.29
-      credentials:
-        username: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
-        password: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
+  call-fossid-internal:
+    name: FOSSID
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    uses: rdkcentral/build_tools_workflows/.github/workflows/fossid_integration_stateless_diffscan.yml@feature/fossid-wflow-prt
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+      base_ref: ${{ github.event.pull_request.base.ref }}
+      compare_ref: ${{ github.event.pull_request.head.sha }}
+    secrets:
+      FOSSID_CONTAINER_USERNAME: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
+      FOSSID_CONTAINER_PASSWORD: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
+      FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
+      FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
 
-    steps:
-      # SECURITY: this workflow runs from pull_request_target with secrets.
-      # Never execute scripts, local actions, builds, or tests from the PR.
-      # Only fetch PR refs as data and run read-only scanning against them.
-      - name: Checkout base repository
-        uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.base_ref }}
-          fetch-depth: 0
-          persist-credentials: false
-          submodules: false
-          lfs: false
-
-      - name: Mark workspace safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: Fetch PR head ref
-        env:
-          PR_NUMBER: ${{ inputs.pr_number }}
-        run: git fetch --no-tags origin "pull/$PR_NUMBER/head:pr-head"
-
-      - name: Checkout ignore projects file
-        uses: actions/checkout@v5
-        with:
-          repository: rdkcentral/build_tools_workflows
-          sparse-checkout: |
-            ignore_projects_fossid
-          ref: develop
-          path: tools
-          persist-credentials: false
-          submodules: false
-          lfs: false
-
-      - name: Run fossid-toolbox
-        env:
-          FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
-          FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
-          BASE_REF: ${{ inputs.base_ref }}
-        run: |
-          fossid \
-            diffscan \
-            --fossid-host "$FOSSID_HOST_USERNAME" \
-            --fossid-token "$FOSSID_HOST_TOKEN" \
-            --format github \
-            --fail \
-            --ignore-projects tools/ignore_projects_fossid \
-            --base-ref "origin/$BASE_REF" \
-            --compare-ref "pr-head"
+  call-fossid-fork:
+    name: FOSSID
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    environment: fossid-scan
+    uses: rdkcentral/build_tools_workflows/.github/workflows/fossid_integration_stateless_diffscan.yml@feature/fossid-wflow-prt
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+      base_ref: ${{ github.event.pull_request.base.ref }}
+      compare_ref: ${{ github.event.pull_request.head.sha }}
+    secrets:
+      FOSSID_CONTAINER_USERNAME: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
+      FOSSID_CONTAINER_PASSWORD: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
+      FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
+      FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
