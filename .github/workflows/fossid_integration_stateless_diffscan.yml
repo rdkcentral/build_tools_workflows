@@ -16,6 +16,8 @@ on:
         required: true
         type: string
     secrets:
+      # These may come from repository secrets (internal PR path) or from the
+      # caller job's environment-scoped secrets after reviewer approval.
       FOSSID_CONTAINER_USERNAME:
         required: true
       FOSSID_CONTAINER_PASSWORD:
@@ -39,6 +41,9 @@ jobs:
         password: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
 
     steps:
+      # SECURITY: this workflow runs from pull_request_target with secrets.
+      # Never execute scripts, local actions, builds, or tests from the PR.
+      # Only fetch PR refs as data and run read-only scanning against them.
       - name: Checkout base repository
         uses: actions/checkout@v5
         with:
