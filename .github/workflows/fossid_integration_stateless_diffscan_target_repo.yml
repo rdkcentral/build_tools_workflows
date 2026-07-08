@@ -14,6 +14,7 @@ concurrency:
 jobs:
   call-fossid-internal:
     name: FOSSID
+    # Same-repo PRs can use the repository-level secrets directly.
     if: github.event.pull_request.head.repo.full_name == github.repository
     uses: rdkcentral/build_tools_workflows/.github/workflows/fossid_integration_stateless_diffscan.yml@feature/fossid-wflow-prt
     with:
@@ -28,6 +29,8 @@ jobs:
 
   call-fossid-fork:
     name: FOSSID
+    # Fork PRs use environment-gated secrets so reviewers approve secret
+    # release before the reusable workflow runs.
     if: github.event.pull_request.head.repo.full_name != github.repository
     environment: fossid-scan
     uses: rdkcentral/build_tools_workflows/.github/workflows/fossid_integration_stateless_diffscan.yml@feature/fossid-wflow-prt
