@@ -21,12 +21,13 @@ on:
         default: false
         type: boolean
     secrets:
-      # These are optional because the fork PR path uses environment secrets in
-      # the reusable workflow job instead of caller-passed secrets.
+      # Container pull credentials are always caller-passed so the private
+      # toolbox image can be pulled during job setup.
       FOSSID_CONTAINER_USERNAME:
         required: false
       FOSSID_CONTAINER_PASSWORD:
         required: false
+      # Host credentials are only caller-passed for the internal path.
       FOSSID_HOST_USERNAME:
         required: false
       FOSSID_HOST_TOKEN:
