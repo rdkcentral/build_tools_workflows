@@ -15,26 +15,106 @@ on:
         description: 'PR number used to fetch the head ref'
         required: true
         type: string
+      use_environment_secrets:
+        description: 'Use environment-gated secrets for the fork PR path'
+        required: false
+        default: false
+        type: boolean
     secrets:
-      # These come from the caller job. For same-repo PRs that is typically the
-      # repository secret set; for fork PRs that is the environment-scoped
-      # secret set released after reviewer approval.
+      # These are optional because the fork PR path uses environment secrets in
+      # the reusable workflow job instead of caller-passed secrets.
       FOSSID_CONTAINER_USERNAME:
-        required: true
+        required: false
       FOSSID_CONTAINER_PASSWORD:
-        required: true
+        required: false
       FOSSID_HOST_USERNAME:
-        required: true
+        required: false
       FOSSID_HOST_TOKEN:
-        required: true
+        required: false
 
 jobs:
-  run-diffscan:
+  run-diffscan-internal:
+    if: ${{ !inputs.use_environment_secrets }}
     name: Fossid Annotate PR
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
+    container:
+      image: quay.io/fossid/fossid-toolbox:1.5.29
+      credentials:
+        username: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
+        password: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
+
+    steps:
+      # SECURITY: this workflow runs from pull_request_target with secrets.
+      # Never execute scripts, local actions, builds, or tests from the PR.
+      # Only fetch PR refs as data and run read-only scanning against them.
+      - name: Checkout base repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.base_ref }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+          lfs: false
+
+      - name: Mark workspace safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Fetch and verify PR head ref
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          COMPARE_REF: ${{ inputs.compare_ref }}
+        run: |
+          # Verify the fetched PR head still matches the event SHA so the scan
+          # result always corresponds to the commit that triggered this run.
+          git fetch --no-tags origin "pull/$PR_NUMBER/head:pr-head"
+          actual_sha="$(git rev-parse pr-head)"
+          if [ "$actual_sha" != "$COMPARE_REF" ]; then
+            echo "Expected PR head SHA $COMPARE_REF but fetched $actual_sha" >&2
+            echo "The PR was updated after this workflow started; rerun on the newer commit." >&2
+            exit 1
+          fi
+
+      - name: Checkout ignore projects file
+        uses: actions/checkout@v5
+        with:
+          repository: rdkcentral/build_tools_workflows
+          sparse-checkout: |
+            ignore_projects_fossid
+          ref: develop
+          path: tools
+          persist-credentials: false
+          submodules: false
+          lfs: false
+
+      - name: Run fossid-toolbox
+        env:
+          FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
+          FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
+          BASE_REF: ${{ inputs.base_ref }}
+        run: |
+          fossid \
+            diffscan \
+            --fossid-host "$FOSSID_HOST_USERNAME" \
+            --fossid-token "$FOSSID_HOST_TOKEN" \
+            --format github \
+            --fail \
+            --ignore-projects tools/ignore_projects_fossid \
+            --base-ref "origin/$BASE_REF" \
+            --compare-ref "pr-head"
+
+  run-diffscan-fork:
+    if: ${{ inputs.use_environment_secrets }}
+    name: Fossid Annotate PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    # Reusable-workflow call jobs cannot declare environment in the caller, so
+    # the fork path applies the environment gate here.
+    environment: fossid-scan
     container:
       image: quay.io/fossid/fossid-toolbox:1.5.29
       credentials:
