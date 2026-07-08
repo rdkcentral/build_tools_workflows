@@ -16,8 +16,9 @@ on:
         required: true
         type: string
     secrets:
-      # These may come from repository secrets (internal PR path) or from the
-      # caller job's environment-scoped secrets after reviewer approval.
+      # These come from the caller job. For same-repo PRs that is typically the
+      # repository secret set; for fork PRs that is the environment-scoped
+      # secret set released after reviewer approval.
       FOSSID_CONTAINER_USERNAME:
         required: true
       FOSSID_CONTAINER_PASSWORD:
