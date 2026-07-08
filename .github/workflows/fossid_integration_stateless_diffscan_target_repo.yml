@@ -39,3 +39,6 @@ jobs:
       base_ref: ${{ github.event.pull_request.base.ref }}
       compare_ref: ${{ github.event.pull_request.head.sha }}
       use_environment_secrets: true
+    secrets:
+      FOSSID_CONTAINER_USERNAME: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
+      FOSSID_CONTAINER_PASSWORD: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
