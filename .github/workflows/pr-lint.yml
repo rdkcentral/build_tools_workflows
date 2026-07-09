@@ -1,0 +1,118 @@
+name: Shared PR Format Check
+
+on:
+  workflow_call:
+    # Callers should use pull_request_target so the workflow runs with
+    # write access even for fork PRs (safe here — no code checkout).
+
+jobs:
+  pr-lint:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Check PR Title & Description Format
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          PR_DATA=$(gh pr view "$PR_NUMBER" -R "$REPO" --json title,body 2>/dev/null) || {
+            echo "⚠️ Could not fetch PR metadata. Skipping."
+            exit 0
+          }
+          PR_TITLE=$(echo "$PR_DATA" | jq -r '.title // ""')
+          PR_BODY=$(echo "$PR_DATA"  | jq -r '.body  // ""')
+
+          ISSUES=""
+          SAFE_TITLE=$(echo "$PR_TITLE" | sed "s/\`/'/g")
+
+          # ==========================================
+          # 1. TITLE: TICKET-123 [TICKET-456] : description
+          # ==========================================
+          if ! echo "$PR_TITLE" | grep -qE '^[A-Z]+-[0-9]+( [A-Z]+-[0-9]+)* *: *[^[:space:]]+'; then
+            ISSUES+="- **Title:** \`${SAFE_TITLE}\` — expected \`TICKET-123 : description\`\n"
+            ISSUES+="  _(Multiple tickets OK: \`RDKCOM-5492 RDKBDEV-3336 : ...\`  |  Include US ticket + subtask for user-stories)_\n"
+          fi
+
+          # ==========================================
+          # 2. DESCRIPTION: required fields present
+          #    Accepts plain / indented / bullet (- *) / bold (**) / bullet+bold
+          # ==========================================
+          field_present() {
+            echo "$PR_BODY" | grep -qiE '^[[:space:]]*([-*][[:space:]]+)?(\*\*)?'"$1"'(\*\*)?[[:space:]]*:'
+          }
+
+          MISSING_FIELDS=""
+          field_present "Reason for change" || MISSING_FIELDS+="  - \`Reason for change\`\n"
+          field_present "Test Procedure"    || MISSING_FIELDS+="  - \`Test Procedure\`\n"
+          field_present "Risks"             || MISSING_FIELDS+="  - \`Risks\` (Low / Medium / High)\n"
+          field_present "Priority"          || MISSING_FIELDS+="  - \`Priority\` (P0 / P1 / P2)\n"
+
+          [ -n "$MISSING_FIELDS" ] && ISSUES+="- **Description** missing:\n$MISSING_FIELDS"
+
+          # ==========================================
+          # 3. DESCRIPTION: required fields not empty
+          # ==========================================
+          if [ -z "$MISSING_FIELDS" ]; then
+            get_field_content() {
+              local FIELD="$1"
+              local INLINE
+              INLINE=$(echo "$PR_BODY" \
+                | grep -iE "^[[:space:]]*([-*][[:space:]]+)?(\*\*)?${FIELD}(\*\*)?[[:space:]]*:" \
+                | sed -E "s/^[^:]*:[[:space:]]*//" \
+                | sed 's/[[:space:]]*\*\*[[:space:]]*$//' \
+                | head -1)
+              if [ -n "$INLINE" ]; then
+                echo "$INLINE"; return
+              fi
+              # Fallback: first non-empty line after header, that is not another header
+              echo "$PR_BODY" \
+                | grep -iEA5 "^[[:space:]]*([-*][[:space:]]+)?(\*\*)?${FIELD}(\*\*)?[[:space:]]*:" \
+                | grep -v "^--$" | tail -n +2 \
+                | grep -m1 '[^[:space:]]' \
+                | grep -viE "^[[:space:]]*([-*][[:space:]]+)?(\*\*)?(Reason for change|Test Procedure|Risks|Priority)(\*\*)?[[:space:]]*:" \
+                | sed 's/^[[:space:]]*//'
+            }
+
+            EMPTY_FIELDS=""
+            [ -z "$(get_field_content 'Reason for change')" ] && EMPTY_FIELDS+="  - \`Reason for change\` is empty\n"
+            [ -z "$(get_field_content 'Test Procedure')"    ] && EMPTY_FIELDS+="  - \`Test Procedure\` is empty\n"
+            [ -z "$(get_field_content 'Risks')"             ] && EMPTY_FIELDS+="  - \`Risks\` is empty (Low / Medium / High)\n"
+            [ -z "$(get_field_content 'Priority')"          ] && EMPTY_FIELDS+="  - \`Priority\` is empty (P0 / P1 / P2)\n"
+
+            [ -n "$EMPTY_FIELDS" ] && ISSUES+="- **Description** has empty fields:\n$EMPTY_FIELDS"
+          fi
+
+          # ==========================================
+          # 4. POST RESULT — non-blocking, update/delete comment as PR changes
+          # ==========================================
+          # Find existing reminder comment via REST API (numeric ID needed for PATCH/DELETE)
+          EXISTING_ID=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+            --jq '.[] | select(.body | startswith("📋 **PR Format")) | .id' \
+            2>/dev/null | head -1)
+
+          if [ -n "$ISSUES" ]; then
+            # Write to step summary
+            printf '## ❌ PR Format Issues\n\n%b\n**Expected:**\n```\nTICKET-123 : brief description\n\nReason for change: why\nTest Procedure: how to verify\nRisks: Low / Medium / High\nPriority: P0 / P1 / P2\n```\n\n_Fix the above and re-push or re-edit to clear this check._\n' "$ISSUES" >> "$GITHUB_STEP_SUMMARY"
+
+            COMMENT=$(printf '📋 **PR Format Reminder**\n\n%b\n**Expected:**\n```\nTICKET-123 : brief description\n\nReason for change: why\nTest Procedure: how to verify\nRisks: Low / Medium / High\nPriority: P0 / P1 / P2\n```' "$ISSUES")
+            if [ -z "$EXISTING_ID" ]; then
+              gh pr comment "$PR_NUMBER" -R "$REPO" --body "$COMMENT" 2>/dev/null \
+                && echo "Posted reminder." \
+                || echo "⚠️ Could not post comment (fork or permissions issue)."
+            else
+              gh api --method PATCH "/repos/${REPO}/issues/comments/${EXISTING_ID}" \
+                -f body="$COMMENT" 2>/dev/null && echo "Updated reminder." || true
+            fi
+
+            echo "PR format check failed."
+            exit 1
+          else
+            echo "## ✅ PR Format OK" >> "$GITHUB_STEP_SUMMARY"
+            echo "✅ PR title and description follow the expected format."
+            if [ -n "$EXISTING_ID" ]; then
+              gh api --method DELETE "/repos/${REPO}/issues/comments/${EXISTING_ID}" 2>/dev/null \
+                && echo "Deleted stale reminder (PR is now correctly formatted)." || true
+            fi
+          fi
