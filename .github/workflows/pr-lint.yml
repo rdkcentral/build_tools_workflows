@@ -18,7 +18,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
         run: |
-          PR_DATA=$(gh pr view "$PR_NUMBER" -R "$REPO" --json title,body,databaseId 2>/dev/null) || {
+          PR_DATA=$(gh pr view "$PR_NUMBER" -R "$REPO" --json title,body 2>/dev/null) || {
             echo "⚠️ Could not fetch PR metadata. Skipping."
             exit 0
           }
