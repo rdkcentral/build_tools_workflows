@@ -21,13 +21,11 @@ jobs:
 
           # ==========================================
           # 1. CHECK PR TITLE FORMAT
-          #    Expected: <TICKET_NUMBER> [<TICKET_NUMBER>...] : <brief_description>
-          #    At least one ticket required, multiple allowed (space-separated)
-          #    Examples: RDKB-12345 : Fix memory leak in hotspot
-          #              RDKCOM-5492 RDKBDEV-3336 : De-authenticating Hotspot Clients
-          #              XONE-999 US-1234 : Add retry logic for connection timeout
+          #    Required: at least one ticket, a colon, and a non-empty description
+          #    Single:   RDKB-12345 : Fix memory leak in hotspot
+          #    Multi:    RDKCOM-5492 RDKBDEV-3336 : De-authenticating Hotspot Clients
           # ==========================================
-          if ! echo "$PR_TITLE" | grep -qE '^[A-Z]+-[0-9]+( [A-Z]+-[0-9]+)* *: *.+'; then
+          if ! echo "$PR_TITLE" | grep -qE '^[A-Z]+-[0-9]+( [A-Z]+-[0-9]+)* *: *\S+'; then
             ISSUES+="- **Title** does not match expected format: \`<TICKET_NUMBER> : <brief_description>\`\n"
             ISSUES+="  - Current: \`$PR_TITLE\`\n"
             ISSUES+="  - Example: \`RDKB-12345 : Fix memory leak in hotspot module\`\n"
@@ -36,25 +34,22 @@ jobs:
           fi
 
           # ==========================================
-          # 2. CHECK PR DESCRIPTION FIELDS
+          # 2. CHECK REQUIRED DESCRIPTION FIELDS EXIST
+          #    Accepts: plain, indented, bullet (- / *), or bold (**) prefixes
+          #    e.g. all of these are valid:
+          #      Reason for change: ...
+          #      - Reason for change: ...
+          #      **Reason for change:** ...
           # ==========================================
+          field_present() {
+            echo "$PR_BODY" | grep -qiE '^[[:space:]]*([-*]|\*\*)?[[:space:]]*'"$1"'[[:space:]]*:\*?\*?'
+          }
+
           MISSING_FIELDS=""
-
-          if ! echo "$PR_BODY" | grep -qiE '^[[:space:]]*Reason for change[[:space:]]*:'; then
-            MISSING_FIELDS+="  - \`Reason for change:\`\n"
-          fi
-
-          if ! echo "$PR_BODY" | grep -qiE '^[[:space:]]*Test Procedure[[:space:]]*:'; then
-            MISSING_FIELDS+="  - \`Test Procedure:\`\n"
-          fi
-
-          if ! echo "$PR_BODY" | grep -qiE '^[[:space:]]*Risks[[:space:]]*:'; then
-            MISSING_FIELDS+="  - \`Risks:\`\n"
-          fi
-
-          if ! echo "$PR_BODY" | grep -qiE '^[[:space:]]*Priority[[:space:]]*:'; then
-            MISSING_FIELDS+="  - \`Priority:\`\n"
-          fi
+          field_present "Reason for change" || MISSING_FIELDS+="  - \`Reason for change:\`\n"
+          field_present "Test Procedure"    || MISSING_FIELDS+="  - \`Test Procedure:\`\n"
+          field_present "Risks"             || MISSING_FIELDS+="  - \`Risks:\`\n"
+          field_present "Priority"          || MISSING_FIELDS+="  - \`Priority:\`\n"
 
           if [ -n "$MISSING_FIELDS" ]; then
             ISSUES+="- **Description** is missing required fields:\n$MISSING_FIELDS"
@@ -62,46 +57,32 @@ jobs:
 
           # ==========================================
           # 3. CHECK FIELDS ARE NOT EMPTY
-          #    Content can be on the same line or the next line
+          #    Content can be inline: "Reason for change: some text"
+          #    or on the next line:
+          #      "Reason for change:"
+          #      "some text"
           # ==========================================
           if [ -z "$MISSING_FIELDS" ]; then
-            EMPTY_FIELDS=""
-
-            # Extract content after "Field:" on the same line, or on the next line
             get_field_content() {
               local FIELD="$1"
-              # First try: content after colon on the same line
-              local INLINE=$(echo "$PR_BODY" | grep -i "^[[:space:]]*${FIELD}[[:space:]]*:" | sed -E "s/^[^:]*:[[:space:]]*//" | head -1)
+              # Try inline first: extract content after the colon on the same line
+              local INLINE
+              INLINE=$(echo "$PR_BODY" | grep -iE "^[[:space:]]*([-*]|\*\*)?[[:space:]]*${FIELD}[[:space:]]*:\*?\*?" \
+                | sed -E "s/^[^:]*:[[:space:]]*//" | sed 's/\*\*[[:space:]]*$//' | head -1)
               if [ -n "$INLINE" ]; then
                 echo "$INLINE"
               else
-                # Fallback: content on the next line
-                echo "$PR_BODY" | grep -iA1 "^[[:space:]]*${FIELD}[[:space:]]*:" | tail -1 | sed 's/^[[:space:]]*//'
+                # Fallback: content on the next non-empty line
+                echo "$PR_BODY" | grep -iEA3 "^[[:space:]]*([-*]|\*\*)?[[:space:]]*${FIELD}[[:space:]]*:\*?\*?" \
+                  | grep -v "^--$" | tail -n +2 | grep -m1 '\S' | sed 's/^[[:space:]]*//'
               fi
             }
 
-            REASON=$(get_field_content "Reason for change")
-            if [ -z "$REASON" ]; then
-              EMPTY_FIELDS+="  - \`Reason for change\` is empty\n"
-            fi
-
-            TEST=$(get_field_content "Test Procedure")
-            if [ -z "$TEST" ]; then
-              EMPTY_FIELDS+="  - \`Test Procedure\` is empty\n"
-            fi
-
-            RISKS=$(get_field_content "Risks")
-            if [ -z "$RISKS" ]; then
-              EMPTY_FIELDS+="  - \`Risks\` is empty\n"
-            fi
-
-            PRIORITY=$(get_field_content "Priority")
-            if [ -z "$PRIORITY" ]; then
-              EMPTY_FIELDS+="  - \`Priority\` is empty\n"
-            fi
-            if [ -z "$PRIORITY" ] || echo "$PRIORITY" | grep -qiE '^(Reason for change|Test Procedure|Risks)[[:space:]]*:'; then
-              EMPTY_FIELDS+="  - \`Priority\` is empty\n"
-            fi
+            EMPTY_FIELDS=""
+            [ -z "$(get_field_content 'Reason for change')" ] && EMPTY_FIELDS+="  - \`Reason for change\` is empty\n"
+            [ -z "$(get_field_content 'Test Procedure')"    ] && EMPTY_FIELDS+="  - \`Test Procedure\` is empty\n"
+            [ -z "$(get_field_content 'Risks')"             ] && EMPTY_FIELDS+="  - \`Risks\` is empty\n"
+            [ -z "$(get_field_content 'Priority')"          ] && EMPTY_FIELDS+="  - \`Priority\` is empty\n"
 
             if [ -n "$EMPTY_FIELDS" ]; then
               ISSUES+="- **Description** has empty fields:\n$EMPTY_FIELDS"
@@ -109,15 +90,15 @@ jobs:
           fi
 
           # ==========================================
-          # 4. POST RESULT (never blocks, only reminds)
+          # 4. POST RESULT — non-blocking, no duplicate comments
           # ==========================================
           if [ -n "$ISSUES" ]; then
             echo "::warning::PR format issues detected (non-blocking)"
 
             COMMENT=$(printf '📋 **PR Format Reminder**\n\nPlease update your PR to follow the standard format:\n\n%b\n---\n\n**Expected format:**\n\n**Title:** \x60<TICKET_NUMBER> : <brief_description>\x60\n\n**Description:**\n\x60\x60\x60\nReason for change: <why this change is needed>\n\nTest Procedure: <how to verify>\n\nRisks: <potential impact>\n\nPriority: <urgency level>\n\x60\x60\x60\n\n_This is a non-blocking reminder. You can still merge._' "$ISSUES")
 
-            # Only comment if we haven't already commented on this PR
-            EXISTING=$(gh pr view "$PR_NUMBER" -R "$REPO" --json comments --jq '.comments[] | select(.body | contains("PR Format Reminder")) | .id' | head -1)
+            EXISTING=$(gh pr view "$PR_NUMBER" -R "$REPO" --json comments \
+              --jq '.comments[] | select(.body | contains("PR Format Reminder")) | .id' | head -1)
             if [ -z "$EXISTING" ]; then
               gh pr comment "$PR_NUMBER" -R "$REPO" --body "$COMMENT"
               echo "Posted format reminder comment."
