@@ -1,4 +1,4 @@
-name: Shared PR Lint
+name: Shared PR Format Check
 
 on:
   workflow_call:
