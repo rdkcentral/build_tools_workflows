@@ -12,23 +12,18 @@ on:
       pr_number:
         required: true
         type: string
-      use_environment_secrets:
-        required: false
-        default: false
-        type: boolean
     secrets:
       FOSSID_CONTAINER_USERNAME:
-        required: false
+        required: true
       FOSSID_CONTAINER_PASSWORD:
-        required: false
+        required: true
       FOSSID_HOST_USERNAME:
-        required: false
+        required: true
       FOSSID_HOST_TOKEN:
-        required: false
+        required: true
 
 jobs:
-  run-diffscan-internal:
-    if: ${{ !inputs.use_environment_secrets }}
+  run-diffscan:
     name: Fossid Annotate PR
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -39,8 +34,10 @@ jobs:
       credentials:
         username: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
         password: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
+
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout base repository
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.base_ref }}
           fetch-depth: 0
@@ -48,7 +45,8 @@ jobs:
           submodules: false
           lfs: false
 
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Mark workspace safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Fetch and verify PR head ref
         env:
@@ -57,9 +55,14 @@ jobs:
         run: |
           git fetch --no-tags origin "pull/$PR_NUMBER/head:pr-head"
           actual_sha="$(git rev-parse pr-head)"
-          [ "$actual_sha" = "$COMPARE_REF" ] || exit 1
+          if [ "$actual_sha" != "$COMPARE_REF" ]; then
+            echo "Expected PR head SHA $COMPARE_REF but fetched $actual_sha" >&2
+            echo "The PR was updated after this workflow started; rerun on the newer commit." >&2
+            exit 1
+          fi
 
-      - uses: actions/checkout@v5
+      - name: Checkout ignore projects file
+        uses: actions/checkout@v5
         with:
           repository: rdkcentral/build_tools_workflows
           sparse-checkout: |
@@ -69,86 +72,6 @@ jobs:
           persist-credentials: false
           submodules: false
           lfs: false
-
-      - name: Validate secrets
-        env:
-          FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
-          FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
-        run: |
-          [ -n "$FOSSID_HOST_USERNAME" ] || { echo "Missing FOSSID_HOST_USERNAME"; exit 1; }
-          [ -n "$FOSSID_HOST_TOKEN" ] || { echo "Missing FOSSID_HOST_TOKEN"; exit 1; }
-
-      - name: Run fossid-toolbox
-        env:
-          FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
-          FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
-          BASE_REF: ${{ inputs.base_ref }}
-        run: |
-          fossid \
-            diffscan \
-            --fossid-host "$FOSSID_HOST_USERNAME" \
-            --fossid-token "$FOSSID_HOST_TOKEN" \
-            --format github \
-            --fail \
-            --ignore-projects tools/ignore_projects_fossid \
-            --base-ref "origin/$BASE_REF" \
-            --compare-ref "pr-head"
-
-  run-diffscan-fork:
-    if: ${{ inputs.use_environment_secrets }}
-    name: Fossid Annotate PR
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    environment: fossid-scan
-    container:
-      image: quay.io/fossid/fossid-toolbox:1.5.29
-      credentials:
-        username: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
-        password: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.base_ref }}
-          fetch-depth: 0
-          persist-credentials: false
-          submodules: false
-          lfs: false
-
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: Fetch and verify PR head ref
-        env:
-          PR_NUMBER: ${{ inputs.pr_number }}
-          COMPARE_REF: ${{ inputs.compare_ref }}
-        run: |
-          git fetch --no-tags origin "pull/$PR_NUMBER/head:pr-head"
-          actual_sha="$(git rev-parse pr-head)"
-          [ "$actual_sha" = "$COMPARE_REF" ] || exit 1
-
-      - uses: actions/checkout@v5
-        with:
-          repository: rdkcentral/build_tools_workflows
-          sparse-checkout: |
-            ignore_projects_fossid
-          ref: develop
-          path: tools
-          persist-credentials: false
-          submodules: false
-          lfs: false
-
-      - name: Validate secrets
-        env:
-          FOSSID_CONTAINER_USERNAME: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
-          FOSSID_CONTAINER_PASSWORD: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
-          FOSSID_HOST_USERNAME: ${{ secrets.FOSSID_HOST_USERNAME }}
-          FOSSID_HOST_TOKEN: ${{ secrets.FOSSID_HOST_TOKEN }}
-        run: |
-          [ -n "$FOSSID_CONTAINER_USERNAME" ] || { echo "Missing FOSSID_CONTAINER_USERNAME"; exit 1; }
-          [ -n "$FOSSID_CONTAINER_PASSWORD" ] || { echo "Missing FOSSID_CONTAINER_PASSWORD"; exit 1; }
-          [ -n "$FOSSID_HOST_USERNAME" ] || { echo "Missing FOSSID_HOST_USERNAME"; exit 1; }
-          [ -n "$FOSSID_HOST_TOKEN" ] || { echo "Missing FOSSID_HOST_TOKEN"; exit 1; }
 
       - name: Run fossid-toolbox
         env:
