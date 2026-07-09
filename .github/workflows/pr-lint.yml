@@ -2,6 +2,8 @@ name: Shared PR Lint
 
 on:
   workflow_call:
+    # Callers should use pull_request_target so the workflow runs with
+    # write access even for fork PRs (safe here — no code checkout).
 
 jobs:
   pr-lint:
