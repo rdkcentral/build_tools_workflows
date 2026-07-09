@@ -12,7 +12,6 @@ jobs:
       pull-requests: write
     steps:
       - name: Check PR Title & Description Format
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -94,8 +93,10 @@ jobs:
             2>/dev/null | head -1)
 
           if [ -n "$ISSUES" ]; then
-            echo "::warning::PR format issues detected (non-blocking)"
-            COMMENT=$(printf '📋 **PR Format Reminder** _(non-blocking)_\n\n%b\n**Expected:**\n```\nTICKET-123 : brief description\n\nReason for change: why\nTest Procedure: how to verify\nRisks: Low / Medium / High\nPriority: P0 / P1 / P2\n```' "$ISSUES")
+            # Write to step summary
+            printf '## ❌ PR Format Issues\n\n%b\n**Expected:**\n```\nTICKET-123 : brief description\n\nReason for change: why\nTest Procedure: how to verify\nRisks: Low / Medium / High\nPriority: P0 / P1 / P2\n```\n\n_Fix the above and re-push or re-edit to clear this check._\n' "$ISSUES" >> "$GITHUB_STEP_SUMMARY"
+
+            COMMENT=$(printf '📋 **PR Format Reminder**\n\n%b\n**Expected:**\n```\nTICKET-123 : brief description\n\nReason for change: why\nTest Procedure: how to verify\nRisks: Low / Medium / High\nPriority: P0 / P1 / P2\n```' "$ISSUES")
             if [ -z "$EXISTING_ID" ]; then
               gh pr comment "$PR_NUMBER" -R "$REPO" --body "$COMMENT" 2>/dev/null \
                 && echo "Posted reminder." \
@@ -104,7 +105,11 @@ jobs:
               gh api --method PATCH "/repos/${REPO}/issues/comments/${EXISTING_ID}" \
                 -f body="$COMMENT" 2>/dev/null && echo "Updated reminder." || true
             fi
+
+            echo "PR format check failed."
+            exit 1
           else
+            echo "## ✅ PR Format OK" >> "$GITHUB_STEP_SUMMARY"
             echo "✅ PR title and description follow the expected format."
             if [ -n "$EXISTING_ID" ]; then
               gh api --method DELETE "/repos/${REPO}/issues/comments/${EXISTING_ID}" 2>/dev/null \
