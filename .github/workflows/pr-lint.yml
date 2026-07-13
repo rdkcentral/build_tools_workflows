@@ -9,6 +9,8 @@ jobs:
   pr-lint:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
+      issues: write
       pull-requests: write
     steps:
       - name: Check PR Title & Description Format
