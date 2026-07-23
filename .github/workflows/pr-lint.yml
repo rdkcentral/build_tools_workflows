@@ -32,7 +32,7 @@ jobs:
           # ==========================================
           # 1. TITLE: TICKET-123 [TICKET-456] : description
           # ==========================================
-          if ! echo "$PR_TITLE" | grep -qE '^[A-Z]+-[0-9]+( [A-Z]+-[0-9]+)* *: *[^[:space:]]+'; then
+          if ! echo "$PR_TITLE" | grep -qE '^[A-Z][A-Z0-9]+-[0-9]+( [A-Z][A-Z0-9]+-[0-9]+)* *: *[^[:space:]]+'; then
             ISSUES+="- **Title:** \`${SAFE_TITLE}\` — expected \`TICKET-123 : description\`\n"
             ISSUES+="  _(Multiple tickets OK: \`RDKCOM-5492 RDKBDEV-3336 : ...\`  |  Include US ticket + subtask for user-stories)_\n"
           fi
