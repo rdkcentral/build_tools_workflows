@@ -30,7 +30,7 @@ jobs:
           SAFE_TITLE=$(echo "$PR_TITLE" | sed "s/\`/'/g")
 
           # ==========================================
-          # 1. TITLE: TICKET-123 [TICKET-456] : description
+          # 1. TITLE: TICKET-123 : description   (multiple tickets allowed, space-separated, e.g. "TICKET-123 TICKET-456 : description")
           # ==========================================
           if ! echo "$PR_TITLE" | grep -qE '^[A-Z][A-Z0-9]+-[0-9]+( [A-Z][A-Z0-9]+-[0-9]+)* *: *[^[:space:]]+'; then
             ISSUES+="- **Title:** \`${SAFE_TITLE}\` — expected \`TICKET-123 : description\`\n"
