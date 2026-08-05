@@ -22,17 +22,16 @@ jobs:
         username: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
         password: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
     steps:
+
+      - name: Setup Curl
+        run: apk add --no-cache curl
+
       - name: Checkout Code
         uses: actions/checkout@v5
-
+      
       - name: Checkout ignore projects file
-        uses: actions/checkout@v5
-        with:
-          repository: rdkcentral/build_tools_workflows
-          sparse-checkout: |
-            ignore_projects_fossid
-          ref: develop
-          path: tools
+        run: |
+          curl https://raw.githubusercontent.com/rdkcentral/build_tools_workflows/refs/heads/develop/ignore_projects_fossid > /tmp/ignore_projects_fossid
 
       - name: Run fossid-toolbox
         env:
@@ -45,4 +44,4 @@ jobs:
             --fossid-token $FOSSID_HOST_TOKEN \
             --format github \
             --fail \
-            --ignore-projects tools/ignore_projects_fossid
+            --ignore-projects /tmp/ignore_projects_fossid
