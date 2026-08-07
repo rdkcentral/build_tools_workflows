@@ -1,7 +1,11 @@
 name: Shared Cross-Repo Gatekeeper
 
 on:
-  workflow_call: # Allows this script to be called by your other 50+ component repos
+  workflow_call:
+    secrets:
+      CROSS_REPO_TOKEN:
+        description: 'PAT with org-wide search permissions for cross-repo PR lookup'
+        required: false
 
 jobs:
   check-reviews:
@@ -9,7 +13,7 @@ jobs:
     steps:
       - name: Verify All Sister PRs Are Approved
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN || secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
         run: |
@@ -25,7 +29,7 @@ jobs:
           # 2. EXTRACT TRACKING KEYS & CUSTOM TOPIC LABELS
           # ==========================================
           # Extract unique uppercase tracking keys from Title/Body (e.g., RDKB-64491)
-          ALL_IDS=$(echo -e "${PR_TITLE}\n${PR_BODY}" | grep -oE '[A-Z0-9]+-[0-9]+' | sort -u)
+          ALL_IDS=$(echo -e "${PR_TITLE}\n${PR_BODY}" | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | sort -u)
 
           # Extract any user-defined custom topic label (e.g., topic:billing-engine-v2)
           CUSTOM_TOPIC=$(echo "$PR_DATA" | jq -r '.labels[].name' 2>/dev/null | grep "^topic:" | head -n 1)
@@ -75,21 +79,21 @@ jobs:
             if [ -n "$ALL_IDS" ]; then
               KEY_QUERY=$(echo "$ALL_IDS" | tr '\n' ' ' | sed 's/ $//' | sed 's/ /" OR "/g' | sed 's/^/"/' | sed 's/$/"/')
               if [ -n "$base_flag" ]; then
-                KEY_RESULTS=$(gh search prs "${KEY_QUERY}" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --base "$base_flag" --json url,repository 2>/dev/null || echo "[]")
+                KEY_RESULTS=$(gh search prs "${KEY_QUERY}" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --base "$base_flag" --limit 100 --json url,repository 2>/dev/null || echo "[]")
               else
-                KEY_RESULTS=$(gh search prs "${KEY_QUERY}" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --json url,repository 2>/dev/null || echo "[]")
+                KEY_RESULTS=$(gh search prs "${KEY_QUERY}" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --limit 100 --json url,repository 2>/dev/null || echo "[]")
               fi
-              results=$(echo "$results $KEY_RESULTS" | jq -s 'add')
+              results=$(echo "$results $KEY_RESULTS" | jq -s 'add // []')
             fi
 
             # Search by topic label (separate query using --label flag)
             if [ -n "$CUSTOM_TOPIC" ]; then
               if [ -n "$base_flag" ]; then
-                LABEL_RESULTS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --base "$base_flag" --json url,repository 2>/dev/null || echo "[]")
+                LABEL_RESULTS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --base "$base_flag" --limit 100 --json url,repository 2>/dev/null || echo "[]")
               else
-                LABEL_RESULTS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --json url,repository 2>/dev/null || echo "[]")
+                LABEL_RESULTS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --limit 100 --json url,repository 2>/dev/null || echo "[]")
               fi
-              results=$(echo "$results $LABEL_RESULTS" | jq -s 'add')
+              results=$(echo "$results $LABEL_RESULTS" | jq -s 'add // []')
             fi
 
             # Deduplicate by URL

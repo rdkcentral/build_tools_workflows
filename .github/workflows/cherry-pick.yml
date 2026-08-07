@@ -65,7 +65,7 @@ jobs:
             ORG_NAME=$(echo "${{ github.repository }}" | cut -d'/' -f1)
 
             # Find all merged PRs across the org sharing this exact topic label
-            SISTER_PRS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state closed --merged --json url,labels 2>/dev/null || echo "[]")
+            SISTER_PRS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state closed --merged --limit 100 --json url,labels 2>/dev/null || echo "[]")
 
             for row in $(echo "$SISTER_PRS" | jq -r '.[] | @base64'); do
               _jq() { echo ${row} | base64 --decode | jq -r ${1}; }
@@ -115,15 +115,20 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           REPO: ${{ github.repository }}
         run: |
-          set -e
-
           # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Get the merge commit and find the original commits
+          # Resolve commits that landed on base branch, handling all merge strategies
           MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
-          COMMITS=$(git log --pretty=format:"%H" ${MERGE_SHA}^1..${MERGE_SHA}^2 2>/dev/null || echo "$MERGE_SHA")
+          if git cat-file -e "${MERGE_SHA}^2" 2>/dev/null; then
+            # Standard merge commit (2 parents): replay individual feature branch commits in order
+            COMMITS=$(git log --pretty=format:"%H" --reverse ${MERGE_SHA}^1..${MERGE_SHA}^2 2>/dev/null)
+          else
+            # Squash or rebase: derive commit count from PR API to walk back from merge SHA
+            PR_COMMIT_COUNT=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json commits --jq '.commits | length' 2>/dev/null || echo "1")
+            COMMITS=$(git log --pretty=format:"%H" --reverse -"${PR_COMMIT_COUNT}" "${MERGE_SHA}" 2>/dev/null)
+          fi
           if [ -z "$COMMITS" ]; then
             COMMITS="$MERGE_SHA"
           fi
@@ -155,14 +160,15 @@ jobs:
             # Create cherry-pick branch
             git checkout -b "$CHERRY_PICK_BRANCH" "origin/$TARGET_BRANCH"
 
-            # Attempt cherry-pick
+            # Attempt cherry-pick; capture stderr to reliably distinguish empty vs conflict
             CONFLICT=false
             EMPTY=false
             for COMMIT in $COMMITS; do
-              if ! git cherry-pick -x "$COMMIT" 2>/dev/null; then
-                if git diff --cached --quiet 2>/dev/null && [ -z "$(git diff)" ]; then
+              CHERRY_OUTPUT=$(git cherry-pick -x "$COMMIT" 2>&1) && CHERRY_EXIT=0 || CHERRY_EXIT=$?
+              if [ $CHERRY_EXIT -ne 0 ]; then
+                if echo "$CHERRY_OUTPUT" | grep -qiE "empty|nothing to commit|already applied"; then
                   EMPTY=true
-                  git cherry-pick --abort 2>/dev/null || true
+                  git cherry-pick --abort 2>/dev/null || git reset --hard HEAD 2>/dev/null || true
                 else
                   CONFLICT=true
                   git cherry-pick --abort 2>/dev/null || true
@@ -189,14 +195,16 @@ jobs:
               continue
             fi
 
-            # Push the branch (force for idempotency)
-            git push --force origin "$CHERRY_PICK_BRANCH"
+            # Push with error handling so remaining branches are still processed on failure
+            if ! git push --force origin "$CHERRY_PICK_BRANCH" 2>/dev/null; then
+              echo "⚠️ Failed to push $CHERRY_PICK_BRANCH. Skipping PR creation for $TARGET_BRANCH."
+              git checkout --detach 2>/dev/null; git branch -D "$CHERRY_PICK_BRANCH" 2>/dev/null || true
+              continue
+            fi
 
-            # Build label args
-            LABEL_ARGS=""
+            # Ensure backport label exists in the repo before attaching it
             if [ -n "$BACKPORT_LABEL" ]; then
               gh label create "$BACKPORT_LABEL" --repo "$REPO" --color "0e8a16" --force >/dev/null 2>&1 || true
-              LABEL_ARGS="--label $BACKPORT_LABEL"
             fi
 
             # Create PR only if one doesn't already exist
@@ -207,13 +215,22 @@ jobs:
               continue
             fi
 
-            gh pr create \
-              --repo "$REPO" \
-              --head "$CHERRY_PICK_BRANCH" \
-              --base "$TARGET_BRANCH" \
-              --title "$PR_TITLE" \
-              --body "Cherry-pick of #${PR_NUMBER} to \`$TARGET_BRANCH\`." \
-              $LABEL_ARGS
+            if [ -n "$BACKPORT_LABEL" ]; then
+              gh pr create \
+                --repo "$REPO" \
+                --head "$CHERRY_PICK_BRANCH" \
+                --base "$TARGET_BRANCH" \
+                --title "$PR_TITLE" \
+                --body "Cherry-pick of #${PR_NUMBER} to \`$TARGET_BRANCH\`." \
+                --label "$BACKPORT_LABEL" || echo "⚠️ Failed to create PR for $TARGET_BRANCH."
+            else
+              gh pr create \
+                --repo "$REPO" \
+                --head "$CHERRY_PICK_BRANCH" \
+                --base "$TARGET_BRANCH" \
+                --title "$PR_TITLE" \
+                --body "Cherry-pick of #${PR_NUMBER} to \`$TARGET_BRANCH\`." || echo "⚠️ Failed to create PR for $TARGET_BRANCH."
+            fi
 
             echo "✅ Cherry-pick PR created for $TARGET_BRANCH."
             git checkout --detach 2>/dev/null; git branch -D "$CHERRY_PICK_BRANCH" 2>/dev/null || true
