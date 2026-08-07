@@ -1,0 +1,211 @@
+name: Shared Cross-Repo Gatekeeper
+
+on:
+  workflow_call: # Allows this script to be called by your other 50+ component repos
+
+jobs:
+  check-reviews:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify All Sister PRs Are Approved
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # 1. Fetch current PR metadata including labels and target base branch
+          PR_DATA=$(gh pr view "$PR_NUMBER" -R "$REPO" --json title,body,baseRefName,labels)
+          PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
+          PR_BODY=$(echo "$PR_DATA" | jq -r '.body')
+          TARGET_BRANCH=$(echo "$PR_DATA" | jq -r '.baseRefName')
+
+          echo "Analyzing PR metadata for tracking elements on target branch: $TARGET_BRANCH"
+
+          # ==========================================
+          # 2. EXTRACT TRACKING KEYS & CUSTOM TOPIC LABELS
+          # ==========================================
+          # Extract unique uppercase tracking keys from Title/Body (e.g., RDKB-64491)
+          ALL_IDS=$(echo -e "${PR_TITLE}\n${PR_BODY}" | grep -oE '[A-Z0-9]+-[0-9]+' | sort -u)
+
+          # Extract any user-defined custom topic label (e.g., topic:billing-engine-v2)
+          CUSTOM_TOPIC=$(echo "$PR_DATA" | jq -r '.labels[].name' 2>/dev/null | grep "^topic:" | head -n 1)
+
+          # If there are no ticket IDs AND no custom topic labels, skip validation safely
+          if [ -z "$ALL_IDS" ] && [ -z "$CUSTOM_TOPIC" ]; then
+            echo "No uppercase tracking keys or custom 'topic:*' labels found. Skipping cross-repo validation."
+            exit 0
+          fi
+
+          # Build a clean, dynamic GitHub OR search query string
+          SEARCH_QUERY=""
+          if [ -n "$ALL_IDS" ]; then
+            SEARCH_QUERY=$(echo "$ALL_IDS" | tr '\n' ' ' | sed 's/ $//' | sed 's/ /" OR "/g' | sed 's/^/"/' | sed 's/$/"/')
+          fi
+
+          if [ -n "$CUSTOM_TOPIC" ]; then
+            if [ -n "$SEARCH_QUERY" ]; then
+              SEARCH_QUERY="${SEARCH_QUERY} OR label:\"${CUSTOM_TOPIC}\""
+            else
+              SEARCH_QUERY="label:\"${CUSTOM_TOPIC}\""
+            fi
+          fi
+
+          echo "Active Dynamic Topic Identifiers: $SEARCH_QUERY"
+          ORG_NAME=$(echo "$REPO" | cut -d'/' -f1)
+
+          # ==========================================
+          # 3. RUN HISTORICAL AUDIT FOR STABLE TRACKS
+          # ==========================================
+          MISSING_CHERRY_PICK_LIST=""
+
+          # Helper: Run ticket key search + topic label search separately, then merge & deduplicate
+          run_search() {
+            local state_flag="$1"
+            local base_flag="$2"
+            local results="[]"
+            local merged_flag=""
+
+            # gh search prs --state only accepts open|closed. For merged, use --state closed --merged
+            if [ "$state_flag" == "merged" ]; then
+              state_flag="closed"
+              merged_flag="--merged"
+            fi
+
+            # Search by ticket keys
+            if [ -n "$ALL_IDS" ]; then
+              KEY_QUERY=$(echo "$ALL_IDS" | tr '\n' ' ' | sed 's/ $//' | sed 's/ /" OR "/g' | sed 's/^/"/' | sed 's/$/"/')
+              if [ -n "$base_flag" ]; then
+                KEY_RESULTS=$(gh search prs "${KEY_QUERY}" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --base "$base_flag" --json url,repository 2>/dev/null || echo "[]")
+              else
+                KEY_RESULTS=$(gh search prs "${KEY_QUERY}" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --json url,repository 2>/dev/null || echo "[]")
+              fi
+              results=$(echo "$results $KEY_RESULTS" | jq -s 'add')
+            fi
+
+            # Search by topic label (separate query using --label flag)
+            if [ -n "$CUSTOM_TOPIC" ]; then
+              if [ -n "$base_flag" ]; then
+                LABEL_RESULTS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --base "$base_flag" --json url,repository 2>/dev/null || echo "[]")
+              else
+                LABEL_RESULTS=$(gh search prs --label "$CUSTOM_TOPIC" --owner "$ORG_NAME" --state "$state_flag" $merged_flag --json url,repository 2>/dev/null || echo "[]")
+              fi
+              results=$(echo "$results $LABEL_RESULTS" | jq -s 'add')
+            fi
+
+            # Deduplicate by URL
+            echo "$results" | jq 'unique_by(.url)'
+          }
+
+          # Isolate search to the target branch if running on a strict production track
+          if [[ "$TARGET_BRANCH" =~ ^(release|support)/ ]]; then
+            echo "🕵️ Stable/Release track detected. Auditing original development footprint..."
+
+            # Narrow open PR search strictly to this specific target release/support branch
+            SISTER_PRS=$(run_search "open" "$TARGET_BRANCH")
+            REPOS_WITH_RELEASE_PRS=$(echo "$SISTER_PRS" | jq -r '.[].repository.name' | sort -u)
+
+            # Find where this cluster originally landed historically on the develop branch
+            HISTORICAL_PRS=$(run_search "merged" "develop")
+            ORIGINAL_REPOS=$(echo "$HISTORICAL_PRS" | jq -r '.[].repository.name' | sort -u)
+
+            while read -r repo; do
+              if [ -n "$repo" ] && ! echo "$REPOS_WITH_RELEASE_PRS" | grep -q "^$repo$"; then
+                echo "⚠️ CRITICAL MISS: Source code changed in '$repo' on develop, but no release PR exists!"
+                MISSING_CHERRY_PICK_LIST="${MISSING_CHERRY_PICK_LIST}\n| 🛑 | rdkcentral/${repo} | MISSING CHERRY-PICK |"
+              fi
+            done <<< "$ORIGINAL_REPOS"
+          else
+            # Standard develop branch workflow: Scan all open matches across the organization globally
+            SISTER_PRS=$(run_search "open" "")
+          fi
+
+          COUNT=$(echo "$SISTER_PRS" | jq '. | length')
+          echo "Found $COUNT open PR(s) linked to this active cluster."
+
+          # ==========================================
+          # 4. EVALUATE PEER APPROVAL STATUS
+          # ==========================================
+          CURRENT_PR_URL="https://github.com/${REPO}/pull/${PR_NUMBER}"
+          UNAPPROVED_PRS=0
+          BLOCKED_LIST=""
+          APPROVED_LIST=""
+
+          for row in $(echo "$SISTER_PRS" | jq -r '.[] | @base64'); do
+            _jq() {
+              echo ${row} | base64 --decode | jq -r ${1}
+            }
+            PR_URL=$(_jq '.url')
+
+            # Skip evaluating the current PR itself
+            if [ "$PR_URL" == "$CURRENT_PR_URL" ]; then
+              echo "⏭️ Skipping self: $PR_URL"
+              continue
+            fi
+
+            echo "Evaluating: $PR_URL"
+
+            # Fetch the official review state (APPROVED, CHANGES_REQUESTED, or REVIEW_REQUIRED)
+            REVIEW_STATUS=$(gh pr view "$PR_URL" --json reviewDecision --jq '.reviewDecision' 2>/dev/null || echo "REVIEW_REQUIRED")
+
+            if [ "$REVIEW_STATUS" != "APPROVED" ]; then
+              echo "❌ Gate Lock: $PR_URL is missing peer approval (Current status: $REVIEW_STATUS)"
+              UNAPPROVED_PRS=$((UNAPPROVED_PRS + 1))
+              BLOCKED_LIST="${BLOCKED_LIST}\n| ❌ | ${PR_URL} | ${REVIEW_STATUS} |"
+            else
+              echo "✅ Gate Clear: $PR_URL is approved."
+              APPROVED_LIST="${APPROVED_LIST}\n| ✅ | ${PR_URL} | APPROVED |"
+            fi
+          done
+
+          # ==========================================
+          # 5. BUILD SUMMARY REPORT
+          # ==========================================
+          SUMMARY="## 🔒 Cross-Repo Gatekeeper Report\n\n"
+          SUMMARY+="**Target Base Branch:** \`${TARGET_BRANCH}\`\n"
+          SUMMARY+="**Active Identifiers Evaluated:** ${SEARCH_QUERY}\n"
+          SUMMARY+="**Total Sister PRs Found:** $((COUNT - 1)) (excluding self)\n\n"
+          SUMMARY+="| Status | Resource / Pull Request | Review State |\n"
+          SUMMARY+="|--------|-------------|-------------|\n"
+
+          if [ -n "$MISSING_CHERRY_PICK_LIST" ]; then
+            SUMMARY+=$(echo -e "$MISSING_CHERRY_PICK_LIST")
+            SUMMARY+="\n"
+          fi
+          if [ -n "$BLOCKED_LIST" ]; then
+            SUMMARY+=$(echo -e "$BLOCKED_LIST")
+            SUMMARY+="\n"
+          fi
+          if [ -n "$APPROVED_LIST" ]; then
+            SUMMARY+=$(echo -e "$APPROVED_LIST")
+            SUMMARY+="\n"
+          fi
+
+          echo -e "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+
+          # ==========================================
+          # 6. ENFORCE MERGE STATUS CONDITIONS
+          # ==========================================
+          # RULE A: Missing cherry-picks ALWAYS break production release/support trains
+          if [ -n "$MISSING_CHERRY_PICK_LIST" ]; then
+            echo -e "\n> ⛔ **Merge Blocked:** Component repositories were modified on \`develop\` but are completely missing cherry-pick PRs on this stable track." >> "$GITHUB_STEP_SUMMARY"
+            echo "Error: Cannot merge. Missing component cherry-pick PRs detected."
+            exit 1
+          fi
+
+          # RULE B: Enforce review approvals based on the branch policy
+          if [ "$UNAPPROVED_PRS" -gt 0 ]; then
+            if [[ "$TARGET_BRANCH" =~ ^(release|support)/ ]]; then
+              # STRICT LOCK FOR STABLE TRACKS: Block partial deployments
+              echo -e "\n> ⛔ **Merge Blocked:** All companion topic component PRs must be approved before ANY can merge into the \`$TARGET_BRANCH\` track." >> "$GITHUB_STEP_SUMMARY"
+              echo "Error: Cannot merge. One or more cross-repository components in this sequence are still in review."
+              exit 1
+            else
+              # LOOSE FOR DEVELOP: Informative logging, but zero blocks to maintain developer velocity
+              echo -e "\n> ⚠️ **Informational Notice:** Some companion tasks under this topic are still in review across the org. Merging is allowed independently on develop." >> "$GITHUB_STEP_SUMMARY"
+              echo "Success: Independent branch development allowed on develop track."
+              exit 0
+            fi
+          fi
+
+          echo -e "\n> **✅ All Clear:** All cross-repo requirements are approved and complete. Safe to merge." >> "$GITHUB_STEP_SUMMARY"
+          echo "Success: All cross-repository conditions for this cluster are clean! Safe to merge."
