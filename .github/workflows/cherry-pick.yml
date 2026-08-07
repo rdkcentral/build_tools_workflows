@@ -12,6 +12,11 @@ on:
         required: false
         type: string
         default: ''
+      pr_number_override:
+        description: 'PR number when triggered via issues:labeled on an already-merged PR (github.event.pull_request context is unavailable in that case).'
+        required: false
+        type: string
+        default: ''
     secrets:
       CROSS_REPO_TOKEN:
         description: 'PAT with org-wide repo write access for cross-repo label propagation'
@@ -25,7 +30,8 @@ jobs:
         id: parse_meta
         env:
           GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN || secrets.GITHUB_TOKEN }}
-          CURRENT_PR_URL: ${{ github.event.pull_request.html_url }}
+          # For issues:labeled events on merged PRs, pull_request context is empty — construct URL from override
+          CURRENT_PR_URL: ${{ inputs.pr_number_override != '' && format('https://github.com/{0}/pull/{1}', github.repository, inputs.pr_number_override) || github.event.pull_request.html_url }}
           EVENT_LABEL: ${{ github.event.label.name }}
         run: |
           # 1. Parse the target destination branch(es) and custom topic label
@@ -113,14 +119,28 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_NUMBER_OVERRIDE: ${{ inputs.pr_number_override }}
           REPO: ${{ github.repository }}
         run: |
           # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # When triggered via issues:labeled on an already-merged PR, pull_request context is empty
+          if [ -n "$PR_NUMBER_OVERRIDE" ] && [ -z "$PR_NUMBER" ]; then
+            PR_DATA=$(gh pr view "$PR_NUMBER_OVERRIDE" --repo "$REPO" --json title,url,mergeCommit,state)
+            if [ "$(echo "$PR_DATA" | jq -r '.state')" != "MERGED" ]; then
+              echo "PR #$PR_NUMBER_OVERRIDE is not yet merged. Skipping."
+              exit 0
+            fi
+            PR_NUMBER="$PR_NUMBER_OVERRIDE"
+            PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
+            PR_URL=$(echo "$PR_DATA" | jq -r '.url')
+            MERGE_SHA=$(echo "$PR_DATA" | jq -r '.mergeCommit.oid // empty')
+          fi
+
           # Resolve commits that landed on base branch, handling all merge strategies
-          MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
+          MERGE_SHA="${MERGE_SHA:-${{ github.event.pull_request.merge_commit_sha }}}"
           if git cat-file -e "${MERGE_SHA}^2" 2>/dev/null; then
             # Standard merge commit (2 parents): replay individual feature branch commits in order
             COMMITS=$(git log --pretty=format:"%H" --reverse ${MERGE_SHA}^1..${MERGE_SHA}^2 2>/dev/null)
