@@ -176,7 +176,7 @@ jobs:
 
             # Verify target branch exists
             if ! git fetch origin "$TARGET_BRANCH" 2>/dev/null; then
-              gh pr comment "$PR_URL" --body "$(printf '❌ **Cherry-pick failed:** Target branch \x60%s\x60 does not exist.\n\nPlease check the label for typos and ensure the branch has been created.' "$TARGET_BRANCH")"
+              gh pr comment "$PR_URL" --body "$(printf '❌ **Cherry-pick failed:** Target branch \x60%s\x60 does not exist.\n\nPlease check the label for typos and ensure the branch has been created.' "$TARGET_BRANCH")" 2>/dev/null || true
               echo "Error: Target branch '$TARGET_BRANCH' does not exist. Skipping."
               continue
             fi
@@ -202,7 +202,7 @@ jobs:
             done
 
             if [ "$EMPTY" = "true" ]; then
-              gh pr comment "$PR_URL" --body "$(printf 'ℹ️ **Cherry-pick to \x60%s\x60 skipped:** The changes already exist on the target branch.\n\nNo action needed — this commit was likely already applied manually.' "$TARGET_BRANCH")"
+              gh pr comment "$PR_URL" --body "$(printf 'ℹ️ **Cherry-pick to \x60%s\x60 skipped:** The changes already exist on the target branch.\n\nNo action needed — this commit was likely already applied manually.' "$TARGET_BRANCH")" 2>/dev/null || true
               echo "Cherry-pick skipped: changes already on $TARGET_BRANCH."
               git checkout --detach 2>/dev/null; git branch -D "$CHERRY_PICK_BRANCH" 2>/dev/null || true
               continue
@@ -213,7 +213,7 @@ jobs:
               if [ -n "$BACKPORT_LABEL" ]; then
                 LABEL_HINT=$(printf '\n\n> ⚠️ **Important:** Add the \x60%s\x60 label to your manual PR. This is required for cross-repo cascade — without it, sister repositories will not be triggered for further cherry-picks from this branch.' "$BACKPORT_LABEL")
               fi
-              gh pr comment "$PR_URL" --body "$(printf '⚠️ **Cherry-pick to \x60%s\x60 failed due to merge conflicts.**\n\nPlease resolve the conflicts manually and create a PR targeting \x60%s\x60.%s' "$TARGET_BRANCH" "$TARGET_BRANCH" "$LABEL_HINT")"
+              gh pr comment "$PR_URL" --body "$(printf '⚠️ **Cherry-pick to \x60%s\x60 failed due to merge conflicts.**\n\nPlease resolve the conflicts manually and create a PR targeting \x60%s\x60.%s' "$TARGET_BRANCH" "$TARGET_BRANCH" "$LABEL_HINT")" 2>/dev/null || true
               echo "Cherry-pick to $TARGET_BRANCH failed due to conflicts."
               git checkout --detach 2>/dev/null; git branch -D "$CHERRY_PICK_BRANCH" 2>/dev/null || true
               continue
