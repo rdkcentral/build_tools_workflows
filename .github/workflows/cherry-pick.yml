@@ -25,6 +25,10 @@ on:
 jobs:
   backport:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write      # push cherry-pick branch
+      pull-requests: write # create PR and post comments
+      issues: write        # add labels to issues/PRs
     steps:
       - name: Extract Metadata & Propagate to Sister PRs
         id: parse_meta
