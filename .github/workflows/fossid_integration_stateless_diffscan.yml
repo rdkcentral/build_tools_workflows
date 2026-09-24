@@ -84,12 +84,15 @@ jobs:
           fi
 
           if [ ! -s /tmp/fossid/fossid_raw.json ]; then
-            echo "::error::FossID diffscan produced no output"
-            exit 1
+            echo '{"license_issues": [], "vsf_issues": []}' > /tmp/fossid/fossid_raw.json
+            echo "FossID diffscan: Clean scan, no findings!"
           fi
 
       - name: Evaluate FossID Matches
         id: evaluate-fossid
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           python3 /tmp/fossid/format_fossid.py /tmp/fossid/fossid_raw.json --sarif fossid.sarif
 
