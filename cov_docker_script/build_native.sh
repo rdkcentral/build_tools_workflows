@@ -10,6 +10,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="${1:-$SCRIPT_DIR/component_config.json}"
 COMPONENT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
+# Configure command-line arguments read from configure_options.conf
+CONFIGURE_ARGS=()
+
 # Source common utilities
 source "$SCRIPT_DIR/common_build_utils.sh"
 
@@ -35,23 +38,23 @@ LIB_PATH=$(expand_path "$(jq -r '.native_component.lib_output_path' "$CONFIG_FIL
 # Configure environment
 configure_environment() {
     print_banner "Building Native Component: $COMPONENT_NAME"
-    
+
     log "Component: $COMPONENT_NAME"
     log "Build type: $BUILD_TYPE"
     log "Component directory: $COMPONENT_DIR"
     log "Header path: $HEADER_PATH"
     log "Library path: $LIB_PATH"
     echo ""
-    
+
     # Setup PKG_CONFIG_PATH and LD_LIBRARY_PATH
     export PKG_CONFIG_PATH="$LIB_PATH/pkgconfig:${PKG_CONFIG_PATH:-}"
     export LD_LIBRARY_PATH="$LIB_PATH:${LD_LIBRARY_PATH:-}"
-    
+
     # Add common include and lib paths
     export CPPFLAGS="${CPPFLAGS:-} -I$HEADER_PATH"
     export CFLAGS="${CFLAGS:-} -I$HEADER_PATH"
     export LDFLAGS="${LDFLAGS:-} -L$LIB_PATH"
-    
+
     log "Environment configured"
     log "  PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
     log "  LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
@@ -62,14 +65,14 @@ configure_environment() {
 apply_source_patches() {
     local patch_count
     patch_count=$(jq -r '.native_component.source_patches // [] | length' "$CONFIG_FILE")
-    
+
     if [[ "$patch_count" -eq 0 ]]; then
         log "No source patches configured"
         return 0
     fi
-    
+
     step "Applying source patches ($patch_count patches)"
-    
+
     local i=0
     while [[ $i -lt $patch_count ]]; do
         local file search replace type content
@@ -78,26 +81,25 @@ apply_source_patches() {
         search=$(jq -r ".native_component.source_patches[$i].search // \"\"" "$CONFIG_FILE")
         replace=$(jq -r ".native_component.source_patches[$i].replace // \"\"" "$CONFIG_FILE")
         content=$(jq -r ".native_component.source_patches[$i].content // \"\"" "$CONFIG_FILE")
-        
+
         # Expand $HOME in file path, then resolve relative paths from COMPONENT_DIR
-        local expanded_file=$(expand_path "$file")
+        local expanded_file
+        expanded_file=$(expand_path "$file")
         local target_file
         if [[ "$expanded_file" = /* ]]; then
-            # Absolute path - use as is
             target_file="$expanded_file"
         else
-            # Relative path - prepend COMPONENT_DIR
             target_file="$COMPONENT_DIR/$expanded_file"
         fi
-        
+
         if ! apply_patch "$target_file" "$search" "$replace" "$type" "$content"; then
             err "Failed to apply patch $((i+1))/$patch_count"
             return 1
         fi
-        
+
         i=$((i + 1))
     done
-    
+
     ok "All patches applied successfully"
     echo ""
     return 0
@@ -107,28 +109,27 @@ apply_source_patches() {
 process_native_headers() {
     local header_count
     header_count=$(jq -r '.native_component.header_sources // [] | length' "$CONFIG_FILE")
-    
+
     if [[ "$header_count" -eq 0 ]]; then
         log "No header sources configured"
         return 0
     fi
-    
+
     step "Processing native component headers ($header_count sources)"
-    
+
     local i=0
     while [[ $i -lt $header_count ]]; do
         local src dst
         src=$(jq -r ".native_component.header_sources[$i].source" "$CONFIG_FILE")
         dst=$(jq -r ".native_component.header_sources[$i].destination" "$CONFIG_FILE")
-        
-        # Expand paths
+
         src="$COMPONENT_DIR/$src"
         dst=$(expand_path "$dst")
-        
+
         copy_headers "$src" "$dst"
         i=$((i + 1))
     done
-    
+
     ok "All headers processed successfully"
     echo ""
     return 0
@@ -138,32 +139,30 @@ process_native_headers() {
 parse_configure_options_file() {
     local conf_file="$1"
     local -n options_array=$2
-    
+
     if [[ ! -f "$conf_file" ]]; then
         err "Configure options file not found: $conf_file"
         return 1
     fi
-    
+
     local current_section=""
     local cppflags=""
     local cflags=""
     local ldflags=""
-    
+
+    CONFIGURE_ARGS=()
+
     while IFS= read -r line || [[ -n "$line" ]]; do
-        # Skip empty lines and comments
         [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-        
-        # Detect section headers
-        if [[ "$line" =~ ^\[([A-Z_]+)\] ]]; then
+
+        if [[ "$line" =~ ^\[([A-Z_]+)\][[:space:]]*$ ]]; then
             current_section="${BASH_REMATCH[1]}"
             continue
         fi
-        
-        # Trim whitespace
+
         line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
         [[ -z "$line" ]] && continue
-        
-        # Append to appropriate section
+
         case "$current_section" in
             CPPFLAGS)
                 cppflags+="$line "
@@ -174,43 +173,47 @@ parse_configure_options_file() {
             LDFLAGS)
                 ldflags+="$line "
                 ;;
+            CONFIGURE_ARGS)
+                line="${line//\$HOME/$HOME}"
+                CONFIGURE_ARGS+=("$line")
+                ;;
+            *)
+                warn "Ignoring option outside a supported section: $line"
+                ;;
         esac
     done < "$conf_file"
-    
-    # Expand environment variables in the flags using envsubst or manual replacement
-    # Use manual replacement for better control and to avoid shell interpretation issues
+
     cppflags="${cppflags//\$HOME/$HOME}"
     cflags="${cflags//\$HOME/$HOME}"
     ldflags="${ldflags//\$HOME/$HOME}"
 
-    # Build final options array
     [[ -n "$cppflags" ]] && options_array+=("CPPFLAGS=${cppflags% }")
     [[ -n "$cflags" ]] && options_array+=("CFLAGS=${cflags% }")
     [[ -n "$ldflags" ]] && options_array+=("LDFLAGS=${ldflags% }")
+
+    return 0
 }
 
 # Build with custom commands
 build_component_commands() {
     cd "$COMPONENT_DIR"
-    
+
     local cmd_count
     cmd_count=$(jq -r '.native_component.build.commands // [] | length' "$CONFIG_FILE")
-    
+
     if [[ "$cmd_count" -eq 0 ]]; then
         err "No build commands configured for 'commands' build type"
         return 1
     fi
-    
+
     step "Running build commands ($cmd_count commands)"
-    
+
     local i=0
     while [[ $i -lt $cmd_count ]]; do
         local command
         command=$(jq -r ".native_component.build.commands[$i]" "$CONFIG_FILE")
-        
-        # Expand environment variables in command
         command=$(expand_path "$command")
-        
+
         log "  [$((i+1))/$cmd_count] Executing: $command"
         if eval "$command"; then
             ok "Success: Command $((i+1))"
@@ -218,10 +221,10 @@ build_component_commands() {
             err "Failed: Command $((i+1)): $command"
             return 1
         fi
-        
+
         i=$((i + 1))
     done
-    
+
     ok "All build commands completed successfully"
     echo ""
     return 0
@@ -230,22 +233,19 @@ build_component_commands() {
 # Build with autotools
 build_component_autotools() {
     cd "$COMPONENT_DIR"
-    
-    # Read configure options as array
+
     local configure_options=()
-    
-    # Check if using external configure options file
+    CONFIGURE_ARGS=()
+
     local config_file_path
     config_file_path=$(jq -r '.native_component.build.configure_options_file // empty' "$CONFIG_FILE")
-    
+
     if [[ -n "$config_file_path" ]]; then
-        # Using external configuration file
         config_file_path=$(expand_path "$config_file_path")
-        # If relative path, make it relative to component dir
-        if [[ ! "$config_file_path" = /* ]]; then
+        if [[ "$config_file_path" != /* ]]; then
             config_file_path="$COMPONENT_DIR/$config_file_path"
         fi
-        
+
         step "Reading configure options from: $config_file_path"
         if ! parse_configure_options_file "$config_file_path" configure_options; then
             err "Failed to parse configure options file"
@@ -253,10 +253,9 @@ build_component_autotools() {
         fi
         ok "Loaded configure options from file"
     else
-        # Using inline configure_options array (legacy support)
         local opt_count
         opt_count=$(jq -r '.native_component.build.configure_options // [] | length' "$CONFIG_FILE")
-        
+
         local i=0
         while [[ $i -lt $opt_count ]]; do
             local option
@@ -265,13 +264,23 @@ build_component_autotools() {
             configure_options+=("$option")
             i=$((i + 1))
         done
+
+        local arg_count
+        arg_count=$(jq -r '.native_component.build.configure_args // [] | length' "$CONFIG_FILE")
+
+        i=0
+        while [[ $i -lt $arg_count ]]; do
+            local configure_arg
+            configure_arg=$(jq -r ".native_component.build.configure_args[$i]" "$CONFIG_FILE")
+            configure_arg=$(expand_path "$configure_arg")
+            CONFIGURE_ARGS+=("$configure_arg")
+            i=$((i + 1))
+        done
     fi
-    
-    # Run autogen if exists
+
     if [[ -f "./autogen.sh" ]]; then
         step "Running autogen.sh"
         chmod +x ./autogen.sh
-        # Set NOCONFIGURE to prevent autogen.sh from automatically running configure
         if ! NOCONFIGURE=1 ./autogen.sh; then
             err "autogen.sh failed"
             return 1
@@ -279,8 +288,6 @@ build_component_autotools() {
         ok "autogen.sh completed"
         echo ""
     elif [[ ! -f "./configure" ]] && [[ -f "./configure.ac" ]]; then
-        # No autogen.sh and no configure, but configure.ac exists
-        # Run autoreconf to generate configure script
         step "Running autoreconf to generate configure script"
         if ! autoreconf -fi; then
             err "autoreconf failed"
@@ -289,32 +296,36 @@ build_component_autotools() {
         ok "autoreconf completed"
         echo ""
     fi
-    
-    # Configure
-    step "Running configure"
-    
-    # Export configure options as environment variables
+
+    local option
     for option in "${configure_options[@]}"; do
         export "$option"
     done
-    
-    if ! ./configure; then
+
+    step "Running configure"
+
+    if [[ ${#CONFIGURE_ARGS[@]} -gt 0 ]]; then
+        log "Configure arguments: ${CONFIGURE_ARGS[*]}"
+    else
+        log "Configure arguments: none"
+    fi
+
+    if ! ./configure "${CONFIGURE_ARGS[@]}"; then
         err "Configure failed"
         return 1
     fi
     ok "Configure completed"
     echo ""
-    
-    # Make
+
     local make_targets
     make_targets=$(jq -r '.native_component.build.make_targets[]? // "all"' "$CONFIG_FILE" | tr '\n' ' ')
-    
+
     local parallel_make
     parallel_make=$(jq -r '.native_component.build.parallel_make // true' "$CONFIG_FILE")
-    
+
     local make_jobs=""
     [[ "$parallel_make" == "true" ]] && make_jobs="-j$(nproc)"
-    
+
     step "Running make $make_jobs $make_targets"
     if ! make $make_jobs $make_targets; then
         err "Make failed"
@@ -322,16 +333,15 @@ build_component_autotools() {
     fi
     ok "Make completed"
     echo ""
-    
+
     return 0
 }
 
 # Run pre-build commands from native_component.pre_build_commands[]
 run_pre_build_commands() {
-
     log "copying python files generic..."
     copy_python_files_generic
-    
+
     log "Running pre-build commands..."
 
     if [[ -z "$CONFIG_FILE" ]] || [[ ! -f "$CONFIG_FILE" ]]; then
@@ -362,7 +372,6 @@ run_pre_build_commands() {
         description=$(jq -r ".native_component.pre_build_commands[$i].description" "$CONFIG_FILE")
         command=$(jq -r ".native_component.pre_build_commands[$i].command" "$CONFIG_FILE")
 
-        # Expand variables safely
         command=$(eval echo "$command")
 
         log "  [$((i+1))/$cmd_count] $description"
@@ -391,7 +400,6 @@ build_component_cmake() {
     make_targets=$(jq -r '.native_component.build.make_targets[]? // "all"' "$CONFIG_FILE" | tr '\n' ' ')
     parallel_make=$(jq -r '.native_component.build.parallel_make // true' "$CONFIG_FILE")
 
-    # Parse configure options file if exists
     local config_file_path cppflags cflags ldflags
     config_file_path=$(jq -r '.native_component.build.configure_options_file // empty' "$CONFIG_FILE")
     if [[ -n "$config_file_path" ]]; then
@@ -403,6 +411,7 @@ build_component_cmake() {
         step "Reading configure options from: $config_file_path"
         local parsed_array=()
         if parse_configure_options_file "$config_file_path" parsed_array; then
+            local opt
             for opt in "${parsed_array[@]}"; do
                 case $opt in
                     CPPFLAGS=*) cppflags="${opt#CPPFLAGS=}" ;;
@@ -416,7 +425,6 @@ build_component_cmake() {
         fi
     fi
 
-    # Compose cmake flags
     local combined_cmake_flags="$cmake_flags"
     [[ -n "$cppflags" ]] && combined_cmake_flags+=" -DCMAKE_C_FLAGS=\"$cppflags $cflags\" -DCMAKE_CXX_FLAGS=\"$cppflags $cflags\""
     [[ -n "$ldflags" ]] && combined_cmake_flags+=" -DCMAKE_EXE_LINKER_FLAGS=\"$ldflags\""
@@ -427,18 +435,17 @@ build_component_cmake() {
 
 # Install libraries
 install_libraries() {
-    # Skip library installation if LIB_PATH is not set or empty
     if [[ -z "$LIB_PATH" || "$LIB_PATH" == "null" ]]; then
         log "No library output path configured, skipping library installation"
         return 0
     fi
-    
+
     step "Installing libraries to $LIB_PATH"
     mkdir -p "$LIB_PATH"
-    
-    # Find and copy all library files (shared objects, static, libtool archives)
-    find "$COMPONENT_DIR" \( -name "*.so*" -o -name "*.a" -o -name "*.la*" \) \( -type f -o -type l \) -exec cp -Pv {} "$LIB_PATH/" \; 2>/dev/null || true
-    
+
+    find "$COMPONENT_DIR" \( -name "*.so*" -o -name "*.a" -o -name "*.la*" \) \
+        \( -type f -o -type l \) -exec cp -Pv {} "$LIB_PATH/" \; 2>/dev/null || true
+
     ok "Libraries installed"
     echo ""
 }
@@ -446,26 +453,22 @@ install_libraries() {
 # Main execution
 main() {
     configure_environment
-    
-    # Process native headers
+
     if ! process_native_headers; then
         err "Header processing failed"
         exit 1
     fi
-    
-    # Apply patches
+
     if ! apply_source_patches; then
         err "Patch application failed"
         exit 1
     fi
-    
-    # Run pre-build commands
+
     if ! run_pre_build_commands; then
         err "Pre-build commands failed"
         exit 1
     fi
 
-    # Build based on type
     case "$BUILD_TYPE" in
         autotools)
             if ! build_component_autotools; then
@@ -473,30 +476,26 @@ main() {
                 exit 1
             fi
             ;;
-            
         cmake)
             if ! build_component_cmake; then
                 err "CMake build failed"
                 exit 1
             fi
             ;;
-
         commands)
             if ! build_component_commands; then
                 err "Build commands failed"
                 exit 1
             fi
             ;;
-            
         *)
             err "Unsupported build type: $BUILD_TYPE"
             exit 1
             ;;
     esac
-    
-    # Install libraries
+
     install_libraries
-    
+
     print_banner "Native Component Build Completed Successfully"
     log "Component: $COMPONENT_NAME"
     log "Headers: $HEADER_PATH"
@@ -505,3 +504,4 @@ main() {
 }
 
 main
+
