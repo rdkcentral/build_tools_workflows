@@ -10,6 +10,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="${1:-$SCRIPT_DIR/component_config.json}"
 COMPONENT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
+# Configure arguments from configure_options.conf
+CONFIGURE_ARGS=()
+
 # Source common utilities
 source "$SCRIPT_DIR/common_build_utils.sh"
 
@@ -148,6 +151,8 @@ parse_configure_options_file() {
     local cppflags=""
     local cflags=""
     local ldflags=""
+
+    CONFIGURE_ARGS=()
     
     while IFS= read -r line || [[ -n "$line" ]]; do
         # Skip empty lines and comments
@@ -173,6 +178,9 @@ parse_configure_options_file() {
                 ;;
             LDFLAGS)
                 ldflags+="$line "
+                ;;
+            CONFIGURE)
+                CONFIGURE_ARGS+=("$line")
                 ;;
         esac
     done < "$conf_file"
@@ -298,7 +306,11 @@ build_component_autotools() {
         export "$option"
     done
     
-    if ! ./configure; then
+    if [[ ${#CONFIGURE_ARGS[@]} -gt 0 ]]; then
+        log "Configure arguments: ${CONFIGURE_ARGS[*]}"
+    fi
+
+    if ! ./configure "${CONFIGURE_ARGS[@]}"; then
         err "Configure failed"
         return 1
     fi
