@@ -57,7 +57,7 @@ jobs:
 
           set +e
           docker run --rm \
-            -v "${{ github.workspace }}:/repo" \
+            -v "$GITHUB_WORKSPACE:/repo" \
             -v "/tmp/fossid:/fossid_config" \
             -w /repo \
             -e FOSSID_HOST_USERNAME \
