@@ -10,6 +10,9 @@ on:
 jobs:
   check-reviews:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # post step summary and read PR data
     steps:
       - name: Verify All Sister PRs Are Approved
         env:
