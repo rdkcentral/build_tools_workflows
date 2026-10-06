@@ -311,3 +311,13 @@ fc6593467d7da7131712575300000000
 fe4b531e392af92e932231d300000000
 # rdk/components/generic/jst
 127e898e7b45f123e194254400000000
+# unified-wifi-mesh (Go proxy module)
+6df95654674515b15507b5bb00000000
+# unified-wifi-mesh/src/cli/etree (Go proxy module)
+103518f63a531a8e8ec10e3d00000000
+# xconfwebconfig (Go proxy module)
+5157abcdb58719b96ef070e800000000
+# xconfadmin (Go proxy module)
+c1d93a2602d26d86001fa06b00000000
+# webconfig (Go proxy module)
+83b7db2dd73ca061f3a6acc700000000
