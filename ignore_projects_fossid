@@ -321,3 +321,11 @@ fe4b531e392af92e932231d300000000
 c1d93a2602d26d86001fa06b00000000
 # webconfig (Go proxy module)
 83b7db2dd73ca061f3a6acc700000000
+# xconfui (Go proxy module)
+3383d7a5e8f745f8384ac82800000000
+# rdk-halif-device_settings (Go proxy module)
+1681f76182cdb6c2d899828a00000000
+# ut-raft (Go proxy module)
+9cf46cff56f4b3f1711956e600000000
+# python_raft (Go proxy module)
+ddf444a8ba4a11e8f1ccf58700000000
