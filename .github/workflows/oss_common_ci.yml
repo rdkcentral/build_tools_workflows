@@ -1,0 +1,36 @@
+name: OSS-Common-CI
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: '30 23 * * *'
+
+jobs:
+  oss-common-ci-workflow:
+    runs-on: .ubuntu-latest
+    steps:
+      - name: Checkout build_tools_workflows code
+        uses: actions/checkout@v4
+        with:
+          repository: rdkcentral/build_tools_workflows
+          path: 'tools'
+          ref: develop
+          token: ${{ secrets.RDKCENTRAL_GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install requests PyGithub
+
+      - name: Run OSS layer change detector
+        working-directory: tools
+        env:
+          RDKCENTRAL_GITHUB_TOKEN: ${{ secrets.RDKCENTRAL_GITHUB_TOKEN }}
+          BRANCH: "develop"
+        run: |
+          python3 oss_manifest_change_detector.py
