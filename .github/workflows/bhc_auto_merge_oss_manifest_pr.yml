@@ -1,0 +1,57 @@
+name: OSS Manifest Auto Merge
+
+on:
+  workflow_call:
+    secrets:
+      rdkcentral_github_token:
+        required: true
+
+jobs:
+  auto-merge-oss-prs:
+    runs-on: comcast-ubuntu-latest
+    if: |
+      github.repository_owner == 'rdkcentral' &&
+      github.event_name == 'pull_request' &&
+      github.event.label.name == 'oss-auto-merge'
+    steps:
+      - name: Auto squash-merge OSS manifest PR
+        env:
+          GH_TOKEN: ${{ secrets.rdkcentral_github_token }}
+        run: |
+          echo "Automatically squash-merging OSS manifest PR #${{ github.event.pull_request.number }}"
+          gh pr merge ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} --squash --admin --delete-branch
+
+  auto-merge-oss-issue-prs:
+    runs-on: comcast-ubuntu-latest
+    if: |
+      github.repository_owner == 'rdkcentral' &&
+      github.event_name == 'issues' &&
+      github.event.label.name == 'oss-auto-merge'
+    steps:
+      - name: Checkout build_tools_workflows code
+        uses: actions/checkout@v4
+        with:
+          repository: rdkcentral/build_tools_workflows
+          path: 'tools'
+          ref: develop
+          token: ${{ secrets.rdkcentral_github_token }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip3 install requests
+
+      - name: Merge PRs linked to OSS manifest issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.rdkcentral_github_token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO_NAME:    ${{ github.repository }}
+        run: |
+          echo "Finding and merging OSS manifest PRs linked to Issue #${{ github.event.issue.number }}"
+          python3 tools/build_health_check_workflow_scripts/merge_prs_for_oss_submanifest_issue.py
