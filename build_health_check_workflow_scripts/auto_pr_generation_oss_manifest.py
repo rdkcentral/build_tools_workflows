@@ -22,6 +22,7 @@ OSS_AUTO_MERGE_LABEL     = 'oss-auto-merge'
 
 
 def fetch_merge_commits(owner, repo, pr_number, github_token):
+
     url = 'https://api.github.com/graphql'
     repo_without_org = repo.split('/')[-1]
     print("Fetching merge commits from {}/{} for PR #{}".format(owner, repo_without_org, pr_number))
@@ -98,6 +99,9 @@ def fetch_merge_commits(owner, repo, pr_number, github_token):
         sys.exit(1)
 
     pr_data = result['data']['repository']['pullRequest']
+    if pr_data is None:
+        print("PR #{} not found in {}/{}.".format(pr_number, owner, repo_without_org))
+        sys.exit(1)
 
     main_pr_merge_commit = None
     if pr_data.get('merged') and pr_data.get('mergeCommit'):
@@ -108,19 +112,18 @@ def fetch_merge_commits(owner, repo, pr_number, github_token):
 
     all_events = pr_data['timelineItems']['nodes']
 
-    connected_issues = {
-        (e['subject']['repository']['nameWithOwner'], e['subject']['number'])
-        for e in all_events
-        if e['__typename'] == 'ConnectedEvent'
-           and e.get('subject', {}).get('__typename') == 'Issue'
-    }
-    disconnected_issues = {
-        (e['subject']['repository']['nameWithOwner'], e['subject']['number'])
-        for e in all_events
-        if e['__typename'] == 'DisconnectedEvent'
-           and e.get('subject', {}).get('__typename') == 'Issue'
-    }
-    current_issues = connected_issues - disconnected_issues
+    # Replay issue link state in order (Connected adds, Disconnected removes)
+    current_issues = set()
+    for e in all_events:
+        subject = e.get('subject') or {}
+        if subject.get('__typename') != 'Issue':
+            continue
+        key = (subject['repository']['nameWithOwner'], subject['number'])
+        if e['__typename'] == 'ConnectedEvent':
+            current_issues.add(key)
+        elif e['__typename'] == 'DisconnectedEvent':
+            current_issues.discard(key)
+
     print("current_issues :", current_issues)
 
     if len(current_issues) > 1:
@@ -134,26 +137,31 @@ def fetch_merge_commits(owner, repo, pr_number, github_token):
         print("No connected issue found.")
 
     issue_timeline = []
-    for e in all_events:
+    if current_issue:
+        for e in all_events:
+            if e['__typename'] == 'ConnectedEvent':
+                subject = e.get('subject', {})
+                if subject.get('__typename') == 'Issue':
+                    if (subject['repository']['nameWithOwner'], subject['number']) == current_issue:
+                        issue_timeline = subject.get('timelineItems', {}).get('nodes', [])
+                        break
+
+    # Replay PR link state in order (Connected adds, Disconnected removes)
+    current_pr_set = set()
+    for e in issue_timeline:
+        subject = e.get('subject') or {}
+        if subject.get('__typename') != 'PullRequest':
+            continue
+        if not subject.get('merged'):
+            continue
+        oid = (subject.get('mergeCommit') or {}).get('oid')
+        if not oid:
+            continue
+        key = (subject['repository']['nameWithOwner'], subject['number'], oid)
         if e['__typename'] == 'ConnectedEvent':
-            subject = e.get('subject', {})
-            if subject.get('__typename') == 'Issue':
-                if (subject['repository']['nameWithOwner'], subject['number']) == current_issue:
-                    issue_timeline = subject.get('timelineItems', {}).get('nodes', [])
-                    break
-
-    def _merged_prs(event_type):
-        return {
-            (e['subject']['repository']['nameWithOwner'], e['subject']['number'],
-             e['subject']['mergeCommit']['oid'])
-            for e in issue_timeline
-            if e['__typename'] == event_type
-               and e.get('subject', {}).get('__typename') == 'PullRequest'
-               and e['subject'].get('merged')
-               and (e['subject'].get('mergeCommit') or {}).get('oid')
-        }
-
-    current_pr_set = _merged_prs('ConnectedEvent') - _merged_prs('DisconnectedEvent')
+            current_pr_set.add(key)
+        elif e['__typename'] == 'DisconnectedEvent':
+            current_pr_set.discard(key)
 
     current_prs = sorted(
         [{'repo': r, 'sha': s} for (r, _, s) in current_pr_set],
@@ -164,13 +172,15 @@ def fetch_merge_commits(owner, repo, pr_number, github_token):
         current_prs.append(main_pr_merge_commit)
 
     print("Final connected PRs:", current_prs)
-    return (current_prs,
-            current_issue[0] if current_issue else None,
-            current_issue[1] if current_issue else None)
+    return (
+        current_prs,
+        current_issue[0] if current_issue else None,
+        current_issue[1] if current_issue else None
+    )
 
 
 def extract_ticket_number(pr_title):
-    match = re.search(r"[A-Z]+-[0-9]+", pr_title)
+    match = re.search(r"[A-Z]+-[0-9]+", pr_title or "")
     return match.group(0) if match else "NO-TICKET"
 
 
@@ -179,8 +189,10 @@ def post_pr_comment(repo_name, pr_number, comment, github_token):
         print("No source PR number available — skipping comment.")
         return
     url = "https://api.github.com/repos/{}/issues/{}/comments".format(repo_name, pr_number)
-    headers = {"Authorization": "Bearer {}".format(github_token),
-               "Accept": "application/vnd.github+json"}
+    headers = {
+        "Authorization": "Bearer {}".format(github_token),
+        "Accept": "application/vnd.github+json"
+    }
     response = requests.post(url, json={"body": comment}, headers=headers)
     if response.status_code == 201:
         print("Comment posted successfully on PR #{}.".format(pr_number))
@@ -205,36 +217,40 @@ def ensure_label_exists(repo, label_name, color='FFFFFF'):
         print("Label '{}' already exists.".format(label_name))
 
 
-def check_duplicate_pr(repo_name, branch_name, github_token):
-    url = "https://api.github.com/repos/{}/{}/pulls".format(GITHUB_ORG, repo_name)
-    headers = {"Authorization": "token {}".format(github_token),
-               "Accept": "application/vnd.github+json"}
-    params = {"state": "open", "head": "{}:{}".format(GITHUB_ORG, branch_name)}
-    response = requests.get(url, headers=headers, params=params)
-    if response.status_code == 200 and response.json():
-        print("Duplicate PR found for branch {} in {}/{}, skipping.".format(
-            branch_name, GITHUB_ORG, repo_name))
-        return True
-    return False
+def find_open_pr_for_branch(repo_obj, head_branch):
+    """Return open PR for head branch in same org, else None."""
+    head_ref = "{}:{}".format(GITHUB_ORG, head_branch)
+    prs = repo_obj.get_pulls(state='open', head=head_ref, sort='created', direction='desc')
+    for pr in prs:
+        return pr
+    return None
 
 
-def create_or_checkout_branch_for_repo(repo, branch_name, base_branch):
-    """Create a new local branch from base_branch (pushed later in commit_and_push)."""
+def ensure_branch_checked_out(repo, branch_name, base_branch):
+    """
+    Ensure local checkout is on branch_name.
+    - If remote branch exists, check it out and pull (resume mode).
+    - Else create from base_branch.
+    Returns: (ok: bool, mode: 'resumed'|'created'|'error')
+    """
     try:
         repo.git.fetch('origin')
-        existing_branches = repo.git.branch('-r')
-        if 'origin/{}'.format(branch_name) in existing_branches:
-            print("Branch {} already exists remotely in {}. Skipping.".format(
-                branch_name, os.path.basename(repo.working_tree_dir)))
-            return False
+        remote_branches = repo.git.branch('-r')
+
+        if 'origin/{}'.format(branch_name) in remote_branches:
+            repo.git.checkout('-B', branch_name, 'origin/{}'.format(branch_name))
+            repo.git.pull('origin', branch_name)
+            print("Resuming existing branch: {}".format(branch_name))
+            return True, 'resumed'
+
         repo.git.checkout(base_branch)
         repo.git.pull('origin', base_branch)
         repo.git.checkout('-b', branch_name)
-        print("Created and checked out new branch: {}".format(branch_name))
-        return True
+        print("Created new branch: {}".format(branch_name))
+        return True, 'created'
     except GitCommandError as e:
-        print("Error checking out branch: {}".format(str(e)))
-        return False
+        print("Error preparing branch {}: {}".format(branch_name, str(e)))
+        return False, 'error'
 
 
 def commit_and_push(manifest_repo_path, commit_message):
@@ -283,7 +299,7 @@ def create_oss_pull_request(github_token, repo_name, head_branch, base_branch,
 
     try:
         pr = repo.create_pull(title=title, body=pr_body, base=base_branch, head=head_branch)
-        # Add the auto-merge label LAST so the 'labeled' trigger fires after other labels.
+        # Add auto-merge label last so label-triggered workflow sees final label set.
         for label in OSS_PR_LABELS:
             pr.add_to_labels(label)
         pr.add_to_labels(OSS_AUTO_MERGE_LABEL)
@@ -296,9 +312,8 @@ def create_oss_pull_request(github_token, repo_name, head_branch, base_branch,
 
 def update_revision_inplace(file_path, project_name, new_revision):
     """
-    Update only the revision attribute of a matching <project> or <submanifest>
-    tag in-place using regex, preserving original formatting.
-    Returns True if a change was made.
+    Update only revision attribute for matching <project> or <submanifest>,
+    preserving formatting/attribute order.
     """
     with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
@@ -318,7 +333,6 @@ def update_revision_inplace(file_path, project_name, new_revision):
     ).format(re.escape(project_name))
 
     new_content, count = re.subn(pattern, replacer, content, flags=re.DOTALL)
-
     if count == 0 or new_content == content:
         return False
 
@@ -336,6 +350,7 @@ def update_xml_files(manifest_repo_path, xml_files, updates):
         if not os.path.exists(xml_path):
             print("XML file not found, skipping: {}".format(xml_path))
             continue
+
         for project_name, new_revision in updates.items():
             if update_revision_inplace(xml_path, project_name, new_revision):
                 print("Updated {}: project '{}' revision to '{}'".format(
@@ -358,32 +373,76 @@ def process_manifest_repo(github_token, repo_name, xml_files, workspace_dir, lay
     try:
         print("Processing manifest repo: {}".format(full))
 
-        if check_duplicate_pr(repo_name, feature_branch, github_token):
-            return {'repo': full, 'status': 'duplicate_skipped'}
-
         manifest_path, repo = clone_manifest_repo(github_token, repo_name, workspace_dir)
         if not manifest_path or not repo:
             return {'repo': full, 'status': 'clone_failed'}
 
-        if not create_or_checkout_branch_for_repo(repo, feature_branch, base_branch):
-            return {'repo': full, 'status': 'branch_exists_skipped'}
+        g = Github(auth=Auth.Token(github_token))
+        repo_obj = g.get_repo(full)
 
-        if not update_xml_files(manifest_path, xml_files, updates):
+        # 1) If open PR already exists for this branch, stop here.
+        existing_pr = find_open_pr_for_branch(repo_obj, feature_branch)
+        if existing_pr:
+            print("Open PR already exists for branch {} in {}: {}".format(
+                feature_branch, full, existing_pr.html_url))
+            return {
+                'repo': full,
+                'status': 'duplicate_skipped',
+                'pr_url': existing_pr.html_url,
+                'pr_number': existing_pr.number
+            }
+
+        # 2) Resume existing branch or create a new one.
+        ok, branch_mode = ensure_branch_checked_out(repo, feature_branch, base_branch)
+        if not ok:
+            return {'repo': full, 'status': 'error', 'error': 'branch_prepare_failed'}
+
+        # 3) Apply updates.
+        changes_made = update_xml_files(manifest_path, xml_files, updates)
+
+        # Recovery path: branch exists (resumed), no file diff now, but PR might be missing.
+        if not changes_made and branch_mode == 'resumed':
+            pr = create_oss_pull_request(
+                github_token, repo_name, feature_branch, base_branch,
+                pr_title, pr_description, layer_name, new_sha[:8], source_pr_url
+            )
+            if pr:
+                post_pr_comment(source_repo_name, source_pr_number,
+                                "OSS Auto PR created in {}: {}".format(full, pr.html_url),
+                                github_token)
+                return {
+                    'repo': full,
+                    'pr_url': pr.html_url,
+                    'pr_number': pr.number,
+                    'status': 'success'
+                }
+
+        if not changes_made:
             return {'repo': full, 'status': 'no_changes'}
 
-        commit_and_push(manifest_path, "[auto] Update {} to {} in {}".format(
-            layer_name, new_sha[:8], ', '.join(xml_files)))
+        # 4) Commit/push and create PR.
+        commit_and_push(
+            manifest_repo_path=manifest_path,
+            commit_message="[auto] Update {} to {} in {}".format(
+                layer_name, new_sha[:8], ', '.join(xml_files))
+        )
 
         pr = create_oss_pull_request(
             github_token, repo_name, feature_branch, base_branch,
-            pr_title, pr_description, layer_name, new_sha[:8], source_pr_url)
+            pr_title, pr_description, layer_name, new_sha[:8], source_pr_url
+        )
         if not pr:
             return {'repo': full, 'status': 'error', 'error': 'PR creation failed'}
 
         post_pr_comment(source_repo_name, source_pr_number,
                         "OSS Auto PR created in {}: {}".format(full, pr.html_url),
                         github_token)
-        return {'repo': full, 'pr_url': pr.html_url, 'pr_number': pr.number, 'status': 'success'}
+        return {
+            'repo': full,
+            'pr_url': pr.html_url,
+            'pr_number': pr.number,
+            'status': 'success'
+        }
 
     except Exception as e:
         print("Error processing {}: {}".format(full, str(e)))
@@ -426,9 +485,11 @@ def main():
         manifest_type    = detect_manifest_type(layer_name, dispatch_manifest)
         target_base      = 'develop'
         pr_title         = "[auto] Update {} to {}".format(layer_name, new_sha[:8])
-        pr_description   = ("Automated manifest update triggered by OSS CI.\n"
-                            "Layer  : {}/{}\n"
-                            "New SHA: {}").format(GITHUB_ORG, layer_name, new_sha)
+        pr_description   = (
+            "Automated manifest update triggered by OSS CI.\n"
+            "Layer  : {}/{}\n"
+            "New SHA: {}"
+        ).format(GITHUB_ORG, layer_name, new_sha)
         source_pr_url    = "https://github.com/{}/{}/commit/{}".format(
             GITHUB_ORG, layer_name, new_sha)
         updates          = {layer_name: new_sha}
@@ -449,8 +510,9 @@ def main():
         layer_name    = repo_name.split('/')[-1]
         manifest_type = detect_manifest_type(layer_name, os.getenv('MANIFEST_TYPE'))
 
-        g       = Github(auth=Auth.Token(github_token))
-        meta_pr = g.get_repo(repo_name).get_pull(int(pr_number))
+        g = Github(auth=Auth.Token(github_token))
+        source_repo = g.get_repo(repo_name)
+        meta_pr = source_repo.get_pull(int(pr_number))
 
         prs, _, _ = fetch_merge_commits(GITHUB_ORG, repo_name, int(pr_number), github_token)
         if not prs:
@@ -463,7 +525,6 @@ def main():
         if ticket_number != "NO-TICKET":
             pr_title = "{} : {}".format(ticket_number, pr_title)
 
-        # oss-common manifest always tracks develop; oss manifest follows the layer's base branch
         target_base      = 'develop' if manifest_type == 'oss-common' else base_branch
         updates          = {pr['repo'].split('/')[-1]: pr['sha'] for pr in prs}
         pr_description   = "{}{}".format(meta_pr.body or "", build_pr_list_description(prs))
@@ -480,11 +541,25 @@ def main():
     else:
         target_repo, xml_files = OSS_MANIFEST_REPO, OSS_MANIFEST_XML_FILES
 
-    print("\n--- Updating {}/{} ({}) ---".format(GITHUB_ORG, target_repo, ', '.join(xml_files)))
+    print("\n--- Updating {}/{} ({}) ---".format(
+        GITHUB_ORG, target_repo, ', '.join(xml_files)
+    ))
     result = process_manifest_repo(
-        github_token, target_repo, xml_files, manifest_workspace, layer_name,
-        new_sha, feature_branch, target_base, pr_title, pr_description, updates,
-        source_pr_url, source_pr_number, source_repo_name)
+        github_token=github_token,
+        repo_name=target_repo,
+        xml_files=xml_files,
+        workspace_dir=manifest_workspace,
+        layer_name=layer_name,
+        new_sha=new_sha,
+        feature_branch=feature_branch,
+        base_branch=target_base,
+        pr_title=pr_title,
+        pr_description=pr_description,
+        updates=updates,
+        source_pr_url=source_pr_url,
+        source_pr_number=source_pr_number,
+        source_repo_name=source_repo_name
+    )
 
     # ── Summary
     print("\n" + "=" * 55)

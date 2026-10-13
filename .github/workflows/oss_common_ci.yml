@@ -7,7 +7,7 @@ on:
 
 jobs:
   oss-common-ci-workflow:
-    runs-on: .ubuntu-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout build_tools_workflows code
         uses: actions/checkout@v4

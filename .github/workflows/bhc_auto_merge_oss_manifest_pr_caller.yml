@@ -10,6 +10,8 @@ on:
   issues:
     types: [labeled]
 
+permissions: {}
+
 jobs:
   call_oss_auto_merge_workflow:
     uses: rdkcentral/build_tools_workflows/.github/workflows/bhc_auto_merge_oss_manifest_pr.yml@develop
