@@ -1,0 +1,19 @@
+name: OSS Manifest Auto Merge Caller
+
+on:
+  pull_request:
+    types: [labeled]
+    branches:
+      - develop
+      - 'support/*.*.*'
+      - 'support/*.*.*.*'
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+jobs:
+  call_oss_auto_merge_workflow:
+    uses: rdkcentral/build_tools_workflows/.github/workflows/bhc_auto_merge_oss_manifest_pr.yml@develop
+    secrets:
+      rdkcentral_github_token: ${{ secrets.RDKCENTRAL_GITHUB_TOKEN }}
