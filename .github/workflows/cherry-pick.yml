@@ -25,6 +25,10 @@ on:
 jobs:
   backport:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write      # push cherry-pick branch
+      pull-requests: write # create PR and post comments
+      issues: write        # add labels to issues/PRs
     steps:
       - name: Extract Metadata & Propagate to Sister PRs
         id: parse_meta
@@ -154,6 +158,7 @@ jobs:
           fi
 
           # Process each target branch
+          SUMMARY="## 🍒 Cherry-Pick Results\n\n**Source PR:** [#${PR_NUMBER}](${PR_URL}) — ${PR_TITLE}\n\n| Target Branch | Result |\n|---|---|\n"
           while IFS= read -r TARGET_BRANCH; do
             [ -z "$TARGET_BRANCH" ] && continue
             echo ""
@@ -172,7 +177,8 @@ jobs:
 
             # Verify target branch exists
             if ! git fetch origin "$TARGET_BRANCH" 2>/dev/null; then
-              gh pr comment "$PR_URL" --body "$(printf '❌ **Cherry-pick failed:** Target branch \x60%s\x60 does not exist.\n\nPlease check the label for typos and ensure the branch has been created.' "$TARGET_BRANCH")"
+              gh pr comment "$PR_URL" --body "$(printf '❌ **Cherry-pick failed:** Target branch \x60%s\x60 does not exist.\n\nPlease check the label for typos and ensure the branch has been created.' "$TARGET_BRANCH")" 2>/dev/null || true
+              SUMMARY+="| \`$TARGET_BRANCH\` | ❌ Branch does not exist |\n"
               echo "Error: Target branch '$TARGET_BRANCH' does not exist. Skipping."
               continue
             fi
@@ -198,7 +204,8 @@ jobs:
             done
 
             if [ "$EMPTY" = "true" ]; then
-              gh pr comment "$PR_URL" --body "$(printf 'ℹ️ **Cherry-pick to \x60%s\x60 skipped:** The changes already exist on the target branch.\n\nNo action needed — this commit was likely already applied manually.' "$TARGET_BRANCH")"
+              gh pr comment "$PR_URL" --body "$(printf 'ℹ️ **Cherry-pick to \x60%s\x60 skipped:** The changes already exist on the target branch.\n\nNo action needed — this commit was likely already applied manually.' "$TARGET_BRANCH")" 2>/dev/null || true
+              SUMMARY+="| \`$TARGET_BRANCH\` | ℹ️ Already applied — skipped |\n"
               echo "Cherry-pick skipped: changes already on $TARGET_BRANCH."
               git checkout --detach 2>/dev/null; git branch -D "$CHERRY_PICK_BRANCH" 2>/dev/null || true
               continue
@@ -209,7 +216,8 @@ jobs:
               if [ -n "$BACKPORT_LABEL" ]; then
                 LABEL_HINT=$(printf '\n\n> ⚠️ **Important:** Add the \x60%s\x60 label to your manual PR. This is required for cross-repo cascade — without it, sister repositories will not be triggered for further cherry-picks from this branch.' "$BACKPORT_LABEL")
               fi
-              gh pr comment "$PR_URL" --body "$(printf '⚠️ **Cherry-pick to \x60%s\x60 failed due to merge conflicts.**\n\nPlease resolve the conflicts manually and create a PR targeting \x60%s\x60.%s' "$TARGET_BRANCH" "$TARGET_BRANCH" "$LABEL_HINT")"
+              gh pr comment "$PR_URL" --body "$(printf '⚠️ **Cherry-pick to \x60%s\x60 failed due to merge conflicts.**\n\nPlease resolve the conflicts manually and create a PR targeting \x60%s\x60.%s' "$TARGET_BRANCH" "$TARGET_BRANCH" "$LABEL_HINT")" 2>/dev/null || true
+              SUMMARY+="| \`$TARGET_BRANCH\` | ⚠️ Conflict — resolve manually and open PR |\n"
               echo "Cherry-pick to $TARGET_BRANCH failed due to conflicts."
               git checkout --detach 2>/dev/null; git branch -D "$CHERRY_PICK_BRANCH" 2>/dev/null || true
               continue
@@ -217,6 +225,7 @@ jobs:
 
             # Push with error handling so remaining branches are still processed on failure
             if ! git push --force origin "$CHERRY_PICK_BRANCH" 2>/dev/null; then
+              SUMMARY+="| \`$TARGET_BRANCH\` | ❌ Push failed |\n"
               echo "⚠️ Failed to push $CHERRY_PICK_BRANCH. Skipping PR creation for $TARGET_BRANCH."
               git checkout --detach 2>/dev/null; git branch -D "$CHERRY_PICK_BRANCH" 2>/dev/null || true
               continue
@@ -230,28 +239,37 @@ jobs:
             # Create PR only if one doesn't already exist
             EXISTING_PR=$(gh pr list --repo "$REPO" --head "$CHERRY_PICK_BRANCH" --state open --json number --jq '.[0].number // empty')
             if [ -n "$EXISTING_PR" ]; then
+              SUMMARY+="| \`$TARGET_BRANCH\` | ℹ️ PR [#${EXISTING_PR}](https://github.com/${REPO}/pull/${EXISTING_PR}) already open — branch updated |\n"
               echo "ℹ️ Cherry-pick PR #$EXISTING_PR already exists for $CHERRY_PICK_BRANCH. Updated branch."
               git checkout --detach 2>/dev/null; git branch -D "$CHERRY_PICK_BRANCH" 2>/dev/null || true
               continue
             fi
 
+            CREATED_PR_URL=""
             if [ -n "$BACKPORT_LABEL" ]; then
-              gh pr create \
+              CREATED_PR_URL=$(gh pr create \
                 --repo "$REPO" \
                 --head "$CHERRY_PICK_BRANCH" \
                 --base "$TARGET_BRANCH" \
                 --title "$PR_TITLE" \
                 --body "Cherry-pick of #${PR_NUMBER} to \`$TARGET_BRANCH\`." \
-                --label "$BACKPORT_LABEL" || echo "⚠️ Failed to create PR for $TARGET_BRANCH."
+                --label "$BACKPORT_LABEL") || echo "⚠️ Failed to create PR for $TARGET_BRANCH."
             else
-              gh pr create \
+              CREATED_PR_URL=$(gh pr create \
                 --repo "$REPO" \
                 --head "$CHERRY_PICK_BRANCH" \
                 --base "$TARGET_BRANCH" \
                 --title "$PR_TITLE" \
-                --body "Cherry-pick of #${PR_NUMBER} to \`$TARGET_BRANCH\`." || echo "⚠️ Failed to create PR for $TARGET_BRANCH."
+                --body "Cherry-pick of #${PR_NUMBER} to \`$TARGET_BRANCH\`.") || echo "⚠️ Failed to create PR for $TARGET_BRANCH."
             fi
 
-            echo "✅ Cherry-pick PR created for $TARGET_BRANCH."
+            if [ -n "$CREATED_PR_URL" ]; then
+              SUMMARY+="| \`$TARGET_BRANCH\` | ✅ PR created: [${CREATED_PR_URL}](${CREATED_PR_URL}) |\n"
+              echo "✅ Cherry-pick PR created for $TARGET_BRANCH: $CREATED_PR_URL"
+            else
+              SUMMARY+="| \`$TARGET_BRANCH\` | ❌ PR creation failed |\n"
+            fi
             git checkout --detach 2>/dev/null; git branch -D "$CHERRY_PICK_BRANCH" 2>/dev/null || true
           done <<< "$TARGET_BRANCHES"
+
+          printf "%b\n" "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
