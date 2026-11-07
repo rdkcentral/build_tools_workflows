@@ -1,0 +1,51 @@
+name: OSS Manifest Auto PR Creation
+
+on:
+  workflow_call:
+    secrets:
+      rdkcentral_github_token:
+        required: true
+
+jobs:
+  auto_pr_creation_oss_manifest:
+    runs-on: ubuntu-latest
+    if: |
+      github.repository_owner == 'rdkcentral' && (
+        (github.event.pull_request.merged == true) ||
+        github.event_name == 'repository_dispatch' )
+    steps:
+      - name: Checkout build_tools_workflows code
+        uses: actions/checkout@v4
+        with:
+          repository: rdkcentral/build_tools_workflows
+          path: 'tools'
+          ref: develop
+          token: ${{ secrets.rdkcentral_github_token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install requests PyGithub GitPython
+
+      - name: Run OSS manifest auto PR script
+        env:
+          PYTHONPATH: ${{ github.workspace }}/tools
+          RDKCENTRAL_GITHUB_TOKEN: ${{ secrets.rdkcentral_github_token }}
+          # workflow_call (PR merged in rdkcentral layer repo)
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER:         ${{ github.event.pull_request.number }}
+          BASE_BRANCH:       ${{ github.event.pull_request.base.ref }}
+          # repository_dispatch (OSS CI)
+          DISPATCH_LAYER_NAME:    ${{ github.event.client_payload.layer_name }}
+          DISPATCH_NEW_SHA:       ${{ github.event.client_payload.new_sha }}
+          DISPATCH_MANIFEST_TYPE: ${{ github.event.client_payload.manifest_type }}
+          WORKSPACE: ${{ github.workspace }}
+          SVC_ACCOUNT_USERNAME: ${{ vars.RDKCENTRAL_SVC_ACCOUNT_USERNAME }}
+          SVC_ACCOUNT_EMAIL:    ${{ vars.RDKCENTRAL_SVC_ACCOUNT_EMAIL }}
+        run: |
+          python3 tools/build_health_check_workflow_scripts/auto_pr_generation_oss_manifest.py
