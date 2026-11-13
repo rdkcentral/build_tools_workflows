@@ -8,6 +8,20 @@ import re
 from git import GitCommandError
 import sys
 import time
+import shutil
+
+
+OSS_ORG = 'rdkcentral'
+OSS_MANIFEST_REPO = 'rdke-oss-manifest'
+OSS_MANIFEST_XML_FILES = ['rdk-oss.xml', 'rdk-docker.xml']
+OSS_COMMON_MANIFEST_REPO = 'rdk-oss-common-manifest'
+OSS_COMMON_MANIFEST_XML = 'rdk-oss-common.xml'
+OSS_COMMON_LAYERS = {
+  'meta-rdk-auxiliary', 'meta-oss-reference-development',
+  'meta-rdk-oss-reference', 'meta-openembedded', 'poky',
+  'meta-python2', 'meta-clang', 'meta-lts-mixins',
+  'meta-rdk-bluetooth', 'meta-binder'
+}
 
 
 #Fetch all merged PRs linked to a specific issue.
@@ -260,7 +274,7 @@ def delete_branch(repo, branch_name):
         print("Error delete branch: {}".format(str(e)))
         sys.exit(1)
 
-def main():
+def legacy_main():
     github_token = os.getenv('GITHUB_TOKEN')
     manifest_repo_path = os.getenv('MANIFEST_REPO_PATH')
     pr_number = os.getenv('PR_NUMBER')
@@ -306,6 +320,122 @@ def main():
     else:
         # delete the unused feature branch
         delete_branch(repo, feature_branch)
+
+
+def update_oss_revision(file_path, project_name, revision):
+    with open(file_path, 'r', encoding='utf-8') as xml_file:
+        content = xml_file.read()
+    pattern = (r'(<(?:project|submanifest)\s[^>]*?(?:name|project)=["\']{}["\'][^>]*?'
+               r'revision=["\'])[^"\']*(["\'])').format(re.escape(project_name))
+    updated_content, replacements = re.subn(pattern, r'\g<1>{}\g<2>'.format(revision), content)
+    if not replacements:
+        return False
+    with open(file_path, 'w', encoding='utf-8') as xml_file:
+        xml_file.write(updated_content)
+    return updated_content != content
+
+
+def clone_oss_manifest_repo(github_token, repo_name, workspace):
+    os.makedirs(workspace, exist_ok=True)
+    path = os.path.join(workspace, repo_name)
+    if os.path.exists(path):
+        shutil.rmtree(path)
+    repo = Repo.clone_from('https://{}@github.com/{}/{}.git'.format(github_token, OSS_ORG, repo_name), path)
+    repo.git.config('user.name', os.getenv('SVC_ACCOUNT_USERNAME', 'bot'))
+    repo.git.config('user.email', os.getenv('SVC_ACCOUNT_EMAIL', 'bot@users.noreply.github.com'))
+    return path, repo
+
+
+def create_oss_pull_request(github_token, manifest_repo, branch, base_branch, title, description):
+    repo = Github(github_token).get_repo('{}/{}'.format(OSS_ORG, manifest_repo))
+    for label, color in (('auto-update', '0075ca'), ('manifest', '0075ca'), ('oss-auto-merge', '008672')):
+        ensure_label_exists(repo, label, color)
+    pr = repo.create_pull(title=title, body=description, base=base_branch, head=branch)
+    pr.add_to_labels('auto-update', 'manifest', 'oss-auto-merge')
+    print('OSS Auto PR created and labeled: {}'.format(pr.html_url))
+
+
+def oss_branch_has_open_pr(repo, branch):
+    return next(iter(repo.get_pulls(state='open', head='{}:{}'.format(OSS_ORG, branch))), None)
+
+
+def oss_prepare_branch(repo, branch, base_branch):
+    repo.git.fetch('origin')
+    if 'origin/{}'.format(branch) in repo.git.branch('-r'):
+        repo.git.checkout('-B', branch, 'origin/{}'.format(branch))
+        repo.git.pull('origin', branch)
+        return True
+    repo.git.checkout(base_branch)
+    repo.git.pull('origin', base_branch)
+    repo.git.checkout('-b', branch)
+    return False
+
+
+def oss_update_manifest(manifest_path, xml_files, updates):
+    changed = False
+    for xml_name in xml_files:
+        xml_path = os.path.join(manifest_path, xml_name)
+        if not os.path.exists(xml_path):
+            print('XML file not found, skipping: {}'.format(xml_path))
+            continue
+        for project_name, revision in updates.items():
+            changed = update_oss_revision(xml_path, project_name, revision) or changed
+    if changed:
+        Repo(manifest_path).git.add(all=True)
+    return changed
+
+
+def oss_main():
+    github_token = os.getenv('RDKCENTRAL_GITHUB_TOKEN') or os.getenv('GITHUB_TOKEN')
+    source_repo_name = os.getenv('SOURCE_REPOSITORY') or os.getenv('GITHUB_REPOSITORY')
+    pr_number = os.getenv('PR_NUMBER')
+    base_branch = os.getenv('BASE_BRANCH')
+    workspace = os.getenv('WORKSPACE') or os.getcwd()
+    if not all([github_token, source_repo_name, pr_number, base_branch]):
+        sys.exit('OSS mode requires token, SOURCE_REPOSITORY, PR_NUMBER, and BASE_BRANCH.')
+    if not source_repo_name.startswith('{}/'.format(OSS_ORG)):
+        sys.exit('Source repository {} is not in {}.'.format(source_repo_name, OSS_ORG))
+    layer_name = source_repo_name.split('/')[-1]
+    source_pr = Github(github_token).get_repo(source_repo_name).get_pull(int(pr_number))
+    prs, _, _ = fetch_merge_commits(OSS_ORG, source_repo_name, int(pr_number), github_token)
+    if not prs:
+        print('No merge commits found. Nothing to process.')
+        return
+    updates = {pr['repo'].split('/')[-1]: pr['sha'] for pr in prs}
+    new_sha = prs[0]['sha']
+    manifest_type = os.getenv('MANIFEST_TYPE') or ('oss-common' if layer_name in OSS_COMMON_LAYERS else 'oss')
+    manifest_repo, xml_files, target_base = ((OSS_COMMON_MANIFEST_REPO, [OSS_COMMON_MANIFEST_XML], 'develop')
+                                             if manifest_type == 'oss-common'
+                                             else (OSS_MANIFEST_REPO, OSS_MANIFEST_XML_FILES, base_branch))
+    branch = 'auto-{}-{}'.format(layer_name, new_sha[:8])
+    title = '[auto] Update {} to {}'.format(layer_name, new_sha[:8])
+    ticket = extract_ticket_number(source_pr.title)
+    if ticket != 'NO-TICKET':
+        title = '{} : {}'.format(ticket, title)
+    description = '{}{}'.format(source_pr.body or '', build_pr_list_description(prs))
+    manifest_path, manifest_git_repo = clone_oss_manifest_repo(github_token, manifest_repo, os.path.join(workspace, 'oss_manifest_repos'))
+    try:
+        manifest_api_repo = Github(github_token).get_repo('{}/{}'.format(OSS_ORG, manifest_repo))
+        if oss_branch_has_open_pr(manifest_api_repo, branch):
+            print('Open OSS manifest PR already exists for {}.'.format(branch))
+            return
+        branch_exists = oss_prepare_branch(manifest_git_repo, branch, target_base)
+        changed = oss_update_manifest(manifest_path, xml_files, updates)
+        if not changed and not branch_exists:
+            print('No OSS manifest changes required.')
+            return
+        if changed:
+            commit_and_push(manifest_path, '[auto] Update {} to {}'.format(layer_name, new_sha[:8]))
+        create_oss_pull_request(github_token, manifest_repo, branch, target_base, title, description)
+    finally:
+        shutil.rmtree(manifest_path, ignore_errors=True)
+
+
+def main():
+    if os.getenv('AUTO_PR_MODE') == 'oss':
+        oss_main()
+    else:
+        legacy_main()
 
 
 if __name__ == '__main__':

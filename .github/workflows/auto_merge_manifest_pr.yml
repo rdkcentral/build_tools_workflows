@@ -1,15 +1,21 @@
 name: Auto-Merge Manifest
 
 on:
-    workflow_call:
-        secrets:
-            RDKCM_RDKE:
-                required: true
+  workflow_call:
+    inputs:
+      auto_merge_label:
+        description: Label that authorizes automatic merging
+        required: false
+        default: bhc-auto-merge
+        type: string
+    secrets:
+      RDKCM_RDKE:
+        required: true
     
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
-    if: contains(github.event.pull_request.labels.*.name, 'bhc-auto-merge')
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, inputs.auto_merge_label)
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -18,11 +24,42 @@ jobs:
         run: |
           echo "Automatically merging PR #${{ github.event.pull_request.number }}"
           # Set up Git to push
-            git config user.name "bot"
-            git config user.email "$BOT_EMAIL"
-          # Merge the PR
-          gh pr merge ${{ github.event.pull_request.number }} --merge --admin
+          git config user.name "bot"
+          git config user.email "$BOT_EMAIL"
+          if [ "${{ inputs.auto_merge_label }}" = "oss-auto-merge" ]; then
+            gh pr merge "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --squash --admin --delete-branch
+          else
+            gh pr merge "${{ github.event.pull_request.number }}" --merge --admin
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.RDKCM_RDKE }}
           BOT_EMAIL: ${{ vars.RDKM_BOT_EMAIL }}
+
+  auto-merge-oss-issue-prs:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues' && github.event.label.name == inputs.auto_merge_label && inputs.auto_merge_label == 'oss-auto-merge' && github.repository_owner == 'rdkcentral'
+    steps:
+      - name: Checkout build tools workflows
+        uses: actions/checkout@v5
+        with:
+          repository: rdkcentral/build_tools_workflows
+          path: tools
+          ref: develop
+          token: ${{ secrets.RDKCM_RDKE }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: python3 -m pip install requests
+
+      - name: Merge OSS manifest PRs linked to issue
+        env:
+          AUTO_MERGE_MODE: oss
+          GITHUB_TOKEN: ${{ secrets.RDKCM_RDKE }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO_NAME: ${{ github.repository }}
+        run: python3 tools/build_health_check_workflow_scripts/merge_prs_for_issue.py
 
