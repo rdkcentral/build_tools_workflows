@@ -71,7 +71,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
-            cd vendor_manifest_repo
+            cd rdke_oss_manifest_repo
             python3 ../tools/build_health_check_workflow_scripts/auto_pr_generation_manifest.py
             cd ..
 
@@ -84,6 +84,6 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
-            cd middleware_manifest_repo
+            cd common_oss_manifest_repo
             python3 ../tools/build_health_check_workflow_scripts/auto_pr_generation_manifest.py
             cd ..
