@@ -200,11 +200,12 @@ def commit_and_push(manifest_repo_path, commit_message):
 def create_pull_request(github_token, repo_name, head_branch, base_branch, title, description):
     g = Github(github_token)
     repo = g.get_repo(repo_name)
-    ensure_label_exists(repo, 'bhc-auto-merge', color='008672')
+    auto_merge_label = os.getenv('AUTO_MERGE_LABEL', 'bhc-auto-merge')
+    ensure_label_exists(repo, auto_merge_label, color='008672')
 
     try:
         pr = repo.create_pull(title=title, body=description, base=base_branch, head=head_branch)
-        pr.add_to_labels('bhc-auto-merge')
+        pr.add_to_labels(auto_merge_label)
         print("PR Created and labeled:", pr.html_url)
         return pr
     except github.GithubException as e:
