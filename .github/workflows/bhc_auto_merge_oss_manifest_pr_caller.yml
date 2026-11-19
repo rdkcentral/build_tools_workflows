@@ -18,4 +18,4 @@ jobs:
     with:
       auto_merge_label: oss-auto-merge
     secrets:
-      RDKCM_RDKE: ${{ secrets.RDKCENTRAL_GITHUB_TOKEN }}
+      RDKCM_RDKE: ${{ secrets.RDKCM_RDKE }}

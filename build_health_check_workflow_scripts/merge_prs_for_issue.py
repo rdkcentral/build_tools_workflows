@@ -66,13 +66,16 @@ def fetch_pr_details(repo_name, pr_number, github_token, max_attempts=10):
 
     return None
 
-def merge_pull_request(repo, pr_number, token):
+def merge_pull_request(repo, pr_number, token, merge_method=None):
     url = "https://api.github.com/repos/{}/pulls/{}/merge".format(repo, pr_number)
     headers = {
         "Authorization": "token {}".format(token),
         "Content-Type": "application/json"
     }
-    response = requests.put(url, headers=headers)
+    if merge_method:
+      response = requests.put(url, headers=headers, json={"merge_method": merge_method})
+    else:
+      response = requests.put(url, headers=headers)
     return response.status_code, response.json()
 
 # Modified function to fetch both CONNECTED_EVENT and DISCONNECTED_EVENT nodes
@@ -92,11 +95,15 @@ def get_linked_pull_requests_details(repo_name, issue_number, github_token, owne
                 subject {
                   ... on PullRequest {
                     number
+                    state
                     title
                     url
                     baseRefName
                     headRefName
                     mergeable
+                    repository {
+                      nameWithOwner
+                    }
                     labels(first: 10) {
                       nodes {
                         name
@@ -117,11 +124,15 @@ def get_linked_pull_requests_details(repo_name, issue_number, github_token, owne
                 subject {
                   ... on PullRequest {
                     number
+                    state
                     title
                     url
                     baseRefName
                     headRefName
                     mergeable
+                    repository {
+                      nameWithOwner
+                    }
                     labels(first: 10) {
                       nodes {
                         name
@@ -196,6 +207,8 @@ def get_linked_pull_requests_details(repo_name, issue_number, github_token, owne
             review_states = [review['state'] for review in pr['reviews']['nodes']]
             detail = {
                 "repo": pr['headRepository']['nameWithOwner'],
+                "target_repo": pr['repository']['nameWithOwner'],
+                "state": pr['state'],
                 "base_branch": pr['baseRefName'],
                 "pr_number": pr['number'],
                 "feature_branch": pr['headRefName'],
@@ -236,22 +249,67 @@ def can_merge(pr, override_verified):
                 pr['review_approved'])
 
 
-def legacy_main():
+def main():
     """
     Entry point for the merge script. Expects the environment variables:
       - ISSUE_URL: full URL to the GH issue
       - OVERRIDE_VERIFIED: 'true' or 'false'
       - GITHUB_TOKEN: your GitHub PAT or Actions token
     """
-    issue_url = os.environ.get('ISSUE_URL')
-    if not issue_url:
-        sys.exit("ERROR: 'ISSUE_URL' environment variable is not set.")
-
-    override_verified = True    
-
     token = os.environ.get('GITHUB_TOKEN')
     if not token:
         sys.exit("ERROR: 'GITHUB_TOKEN' environment variable is not set.")
+
+    if os.getenv('AUTO_MERGE_MODE') == 'oss':
+      repo = os.environ.get('REPO_NAME')
+      issue_number = os.environ.get('ISSUE_NUMBER')
+      if not repo or not issue_number or not repo.startswith('rdkcentral/'):
+        sys.exit("OSS mode requires REPO_NAME in rdkcentral and ISSUE_NUMBER.")
+
+      owner, repo_name = repo.split('/', 1)
+      pr_details = get_linked_pull_requests_details(repo_name, issue_number, token, owner)
+      if not pr_details:
+        sys.exit("No linked pull requests found; leaving OSS issue open.")
+
+      all_merged = True
+      for pr in pr_details:
+        target_repo = pr['target_repo']
+        if target_repo.split('/')[0] != 'rdkcentral':
+          print("Skipping PR #{} outside rdkcentral: {}".format(pr['pr_number'], target_repo))
+          all_merged = False
+          continue
+        if pr['state'] == 'MERGED':
+          continue
+        if pr['state'] != 'OPEN':
+          print("PR #{} in {} is {} (not merged).".format(
+            pr['pr_number'], target_repo, pr['state']))
+          all_merged = False
+          continue
+
+        status_code, response = merge_pull_request(
+          target_repo, pr['pr_number'], token, merge_method='squash')
+        print("Squash merge PR {} #{}: HTTP {} - {}".format(
+          target_repo, pr['pr_number'], status_code,
+          response.get('message', 'No message')))
+        if status_code != 200:
+          all_merged = False
+
+      if not all_merged:
+        sys.exit("Not all linked PRs were merged; OSS issue remains open.")
+
+      close_response = requests.patch(
+        "https://api.github.com/repos/{}/issues/{}".format(repo, issue_number),
+        headers={"Authorization": "token {}".format(token),
+             "Content-Type": "application/json"},
+        json={"state": "closed"})
+      close_response.raise_for_status()
+      return
+
+    issue_url = os.environ.get('ISSUE_URL')
+    if not issue_url:
+      sys.exit("ERROR: 'ISSUE_URL' environment variable is not set.")
+
+    override_verified = True
 
     # Parse the Issue URL to get (owner, repo_name, issue_number)
     try:
@@ -296,42 +354,5 @@ def legacy_main():
                 f"Merge PR {pr['repo']} #{pr['pr_number']}: "
                 f"HTTP {status_code} - {response.get('message', 'No message')}"
             )
-
-
-def get_oss_linked_pull_requests(repo_name, issue_number, github_token):
-    query = '''query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){issue(number:$number){timelineItems(first:100,itemTypes:[CONNECTED_EVENT]){nodes{... on ConnectedEvent{subject{... on PullRequest{number state repository{nameWithOwner}}}}}}}}}'''
-    owner, repository = repo_name.split('/', 1)
-    response = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': {'owner': owner, 'repo': repository, 'number': int(issue_number)}}, headers={'Authorization': 'bearer {}'.format(github_token)})
-    response.raise_for_status()
-    body = response.json()
-    if body.get('errors'):
-        raise RuntimeError('GraphQL errors: {}'.format(body['errors']))
-    return [node['subject'] for node in body['data']['repository']['issue']['timelineItems']['nodes'] if node.get('subject')]
-
-
-def oss_main():
-    token, repo_name, issue_number = os.getenv('GITHUB_TOKEN'), os.getenv('REPO_NAME'), os.getenv('ISSUE_NUMBER')
-    if not all([token, repo_name, issue_number]) or not repo_name.startswith('rdkcentral/'):
-        sys.exit('OSS mode requires GITHUB_TOKEN, REPO_NAME, and ISSUE_NUMBER for an rdkcentral repository.')
-    all_merged = True
-    for pull_request in get_oss_linked_pull_requests(repo_name, issue_number, token):
-        if pull_request['state'] == 'MERGED':
-            continue
-        response = requests.put('https://api.github.com/repos/{}/pulls/{}/merge'.format(pull_request['repository']['nameWithOwner'], pull_request['number']), headers={'Authorization': 'token {}'.format(token)}, json={'merge_method': 'squash'})
-        if response.status_code != 200:
-            print('Could not merge PR #{}: {}'.format(pull_request['number'], response.text))
-            all_merged = False
-    if not all_merged:
-        sys.exit('Not all linked PRs were merged; issue remains open.')
-    response = requests.patch('https://api.github.com/repos/{}/issues/{}'.format(repo_name, issue_number), headers={'Authorization': 'token {}'.format(token)}, json={'state': 'closed'})
-    response.raise_for_status()
-
-
-def main():
-    if os.getenv('AUTO_MERGE_MODE') == 'oss':
-        oss_main()
-    else:
-        legacy_main()
-
 if __name__ == "__main__":
     main()

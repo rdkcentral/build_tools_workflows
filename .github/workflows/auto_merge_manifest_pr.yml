@@ -22,18 +22,21 @@ jobs:
       
       - name: Auto-merge PR
         run: |
-          echo "Automatically merging PR #${{ github.event.pull_request.number }}"
+          echo "Automatically merging PR #$PR_NUMBER"
           # Set up Git to push
           git config user.name "bot"
           git config user.email "$BOT_EMAIL"
-          if [ "${{ inputs.auto_merge_label }}" = "oss-auto-merge" ]; then
-            gh pr merge "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --squash --admin --delete-branch
+          if [ "$AUTO_MERGE_LABEL" = "oss-auto-merge" ]; then
+            gh pr merge "$PR_NUMBER" --repo "$REPO_NAME" --squash --admin --delete-branch
           else
-            gh pr merge "${{ github.event.pull_request.number }}" --merge --admin
+            gh pr merge "$PR_NUMBER" --merge --admin
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.RDKCM_RDKE }}
           BOT_EMAIL: ${{ vars.RDKM_BOT_EMAIL }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO_NAME: ${{ github.repository }}
+          AUTO_MERGE_LABEL: ${{ inputs.auto_merge_label }}
 
   auto-merge-oss-issue-prs:
     runs-on: ubuntu-latest
