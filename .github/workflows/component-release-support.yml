@@ -1,0 +1,141 @@
+name: Component Release Support
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: 'Prepare a hotfix for PR review, or finish after review (retain the hotfix branch)'
+        required: true
+        type: choice
+        options:
+          - prepare
+          - finish
+      tag:
+        description: 'Hotfix version to release (e.g. 3.17.0.5)'
+        required: true
+        type: string
+      jira_ticket:
+        description: 'Jira ticket for the changelog commit (required for prepare)'
+        required: false
+        type: string
+      support_branch:
+        description: 'Existing support branch (e.g. support/2.16.0)'
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      phase:
+        description: 'Release phase: prepare or finish'
+        required: true
+        type: string
+      tag:
+        description: 'Hotfix version to release (e.g. 3.17.0.5)'
+        required: true
+        type: string
+      jira_ticket:
+        description: 'Jira ticket for the changelog commit (required for prepare)'
+        required: false
+        type: string
+      support_branch:
+        description: 'Existing support branch (e.g. support/2.16.0)'
+        required: true
+        type: string
+    secrets:
+      RDKCM_DEPLOY_KEY:
+        description: 'SSH deploy key for git operations'
+        required: true
+
+concurrency:
+  group: support-release-${{ github.repository }}-${{ inputs.support_branch }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_PHASE: ${{ inputs.phase }}
+      RELEASE_VERSION: ${{ inputs.tag }}
+      JIRA_TICKET: ${{ inputs.jira_ticket }}
+      SUPPORT_BRANCH: ${{ inputs.support_branch }}
+      GIT_MERGE_AUTOEDIT: 'no'
+      GIT_EDITOR: 'true'
+
+    steps:
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_PHASE" == prepare || "$RELEASE_PHASE" == finish ]] || { echo 'Phase must be prepare or finish.' >&2; exit 1; }
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+(\.[0-9]+)+$ ]] || { echo 'Version must contain numeric components separated by dots.' >&2; exit 1; }
+          [[ "$SUPPORT_BRANCH" == support/* ]] && git check-ref-format "refs/heads/$SUPPORT_BRANCH" || { echo 'A valid support/* branch is required.' >&2; exit 1; }
+          if [[ "$RELEASE_PHASE" == prepare && ! "$JIRA_TICKET" =~ ^[A-Z][A-Z0-9_]*-[0-9]+$ ]]; then
+            echo 'A Jira ticket (e.g. RDKEMW-10110) is required for prepare.' >&2
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.support_branch }}
+          ssh-key: ${{ secrets.RDKCM_DEPLOY_KEY }}
+
+      - name: Set up Git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "187267378+rdkcm-rdke@users.noreply.github.com"
+
+      - name: Install git-flow and auto-changelog
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-flow
+          npm install -g auto-changelog@2.5.0
+
+      - name: Configure support release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin
+          git checkout "$SUPPORT_BRANCH"
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_VERSION"; then
+            echo "Tag $RELEASE_VERSION already exists; refusing to overwrite it." >&2
+            exit 1
+          fi
+          git config gitflow.branch.master "$SUPPORT_BRANCH"
+          git config gitflow.branch.develop "$SUPPORT_BRANCH"
+          git flow init -f -d
+          git config gitflow.prefix.versiontag ''
+
+      - name: Prepare and publish hotfix
+        if: inputs.phase == 'prepare'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin "refs/heads/hotfix/$RELEASE_VERSION"; then
+            echo "Hotfix branch hotfix/$RELEASE_VERSION already exists." >&2
+            exit 1
+          fi
+          git flow hotfix start "$RELEASE_VERSION"
+          auto-changelog -v "$RELEASE_VERSION"
+          git add CHANGELOG.md
+          git commit -s -m "$JIRA_TICKET - Changelog updates for $RELEASE_VERSION"
+          git flow hotfix publish "$RELEASE_VERSION"
+          printf 'Hotfix `%s` published. Create a PR targeting `%s`. Retain the hotfix branch until finish completes.\n' "$RELEASE_VERSION" "$SUPPORT_BRANCH" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Finish hotfix and push support branch and tag
+        if: inputs.phase == 'finish'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "refs/heads/hotfix/$RELEASE_VERSION:refs/heads/hotfix/$RELEASE_VERSION"
+          git checkout "hotfix/$RELEASE_VERSION"
+          if ! git flow hotfix finish -m "$RELEASE_VERSION hotfix" "$RELEASE_VERSION"; then
+            git status --short
+            git merge --continue
+            git flow hotfix finish -m "$RELEASE_VERSION hotfix" "$RELEASE_VERSION"
+          fi
+          git push --atomic origin "refs/heads/$SUPPORT_BRANCH:refs/heads/$SUPPORT_BRANCH" "refs/tags/$RELEASE_VERSION:refs/tags/$RELEASE_VERSION"
+          printf 'Released `%s` on `%s`.\n' "$RELEASE_VERSION" "$SUPPORT_BRANCH" >> "$GITHUB_STEP_SUMMARY"
