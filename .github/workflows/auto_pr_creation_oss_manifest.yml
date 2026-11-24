@@ -9,7 +9,7 @@ on:
 jobs:
   auto_pr_creation_oss_manifest:
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'rdkcentral' && github.event.pull_request.merged == true
+    if: github.repository_owner == 'rdkcentral' && github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
     steps:
       - name: Checkout build_tools_workflows code
         uses: actions/checkout@v5

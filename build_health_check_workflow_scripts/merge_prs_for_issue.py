@@ -201,6 +201,8 @@ def get_linked_pull_requests_details(repo_name, issue_number, github_token, owne
         pr_key = (pr["headRepository"]["nameWithOwner"], pr["number"])
 
         if event_type == "ConnectedEvent":
+            # A later connection supersedes an earlier disconnection.
+            disconnected_pr_keys.discard(pr_key)
             connected_pr_keys.add(pr_key)
             # Prepare the details dictionary as in your original function.
             labels = [label['name'] for label in pr['labels']['nodes']]
@@ -249,6 +251,49 @@ def can_merge(pr, override_verified):
                 pr['review_approved'])
 
 
+def merge_oss_issue_prs(repo, issue_number, token):
+  """Squash linked OSS PRs and close the issue only after all have merged."""
+  owner, repo_name = repo.split('/', 1)
+  pr_details = get_linked_pull_requests_details(repo_name, issue_number, token, owner)
+  if not pr_details:
+    sys.exit("No linked pull requests found; leaving OSS issue open.")
+
+  all_merged = True
+  for pr in pr_details:
+    # Use the base repository, not a contributor's fork, for the merge API.
+    target_repo = pr['target_repo']
+    if target_repo.split('/')[0] != 'rdkcentral':
+      print("Skipping PR #{} outside rdkcentral: {}".format(pr['pr_number'], target_repo))
+      all_merged = False
+      continue
+    if pr['state'] == 'MERGED':
+      continue
+    if pr['state'] != 'OPEN':
+      print("PR #{} in {} is {} (not merged).".format(
+        pr['pr_number'], target_repo, pr['state']))
+      all_merged = False
+      continue
+
+    status_code, response = merge_pull_request(
+      target_repo, pr['pr_number'], token, merge_method='squash')
+    print("Squash merge PR {} #{}: HTTP {} - {}".format(
+      target_repo, pr['pr_number'], status_code,
+      response.get('message', 'No message')))
+    if status_code != 200:
+      all_merged = False
+
+  # A failed merge or a closed, unmerged PR must not close the issue.
+  if not all_merged:
+    sys.exit("Not all linked PRs were merged; OSS issue remains open.")
+
+  close_response = requests.patch(
+    "https://api.github.com/repos/{}/issues/{}".format(repo, issue_number),
+    headers={"Authorization": "token {}".format(token),
+         "Content-Type": "application/json"},
+    json={"state": "closed"})
+  close_response.raise_for_status()
+
+
 def main():
     """
     Entry point for the merge script. Expects the environment variables:
@@ -266,43 +311,7 @@ def main():
       if not repo or not issue_number or not repo.startswith('rdkcentral/'):
         sys.exit("OSS mode requires REPO_NAME in rdkcentral and ISSUE_NUMBER.")
 
-      owner, repo_name = repo.split('/', 1)
-      pr_details = get_linked_pull_requests_details(repo_name, issue_number, token, owner)
-      if not pr_details:
-        sys.exit("No linked pull requests found; leaving OSS issue open.")
-
-      all_merged = True
-      for pr in pr_details:
-        target_repo = pr['target_repo']
-        if target_repo.split('/')[0] != 'rdkcentral':
-          print("Skipping PR #{} outside rdkcentral: {}".format(pr['pr_number'], target_repo))
-          all_merged = False
-          continue
-        if pr['state'] == 'MERGED':
-          continue
-        if pr['state'] != 'OPEN':
-          print("PR #{} in {} is {} (not merged).".format(
-            pr['pr_number'], target_repo, pr['state']))
-          all_merged = False
-          continue
-
-        status_code, response = merge_pull_request(
-          target_repo, pr['pr_number'], token, merge_method='squash')
-        print("Squash merge PR {} #{}: HTTP {} - {}".format(
-          target_repo, pr['pr_number'], status_code,
-          response.get('message', 'No message')))
-        if status_code != 200:
-          all_merged = False
-
-      if not all_merged:
-        sys.exit("Not all linked PRs were merged; OSS issue remains open.")
-
-      close_response = requests.patch(
-        "https://api.github.com/repos/{}/issues/{}".format(repo, issue_number),
-        headers={"Authorization": "token {}".format(token),
-             "Content-Type": "application/json"},
-        json={"state": "closed"})
-      close_response.raise_for_status()
+      merge_oss_issue_prs(repo, issue_number, token)
       return
 
     issue_url = os.environ.get('ISSUE_URL')
