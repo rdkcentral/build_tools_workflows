@@ -345,3 +345,43 @@ fea7eba25b6e44cdd6d068e000000000
 21830d281823b206de181c4f00000000
 # xmidt-org/shared-go
 7f2786c68e1129e038c6373e00000000
+# xmidt-org/bascule
+f1bfcb71b4596c4daf356d8700000000
+# xmidt-org/caduceus
+59f9d3610cb13d1bc33419f800000000
+# xmidt-org/cjwt
+6fab954372151494759427f500000000
+# xmidt-org/codex (Go proxy module)
+a8e084cea48be93730c3c6d200000000
+# xmidt-org/ears
+746a41a96fa0690b1eb948cd00000000
+# xmidt-org/parodus
+358c91b7fded5715a2ff9b4700000000
+# xmidt-org/petasos
+85c3ba98aff891a1c3b8707600000000
+# xmidt-org/release-builder-action
+f8cf43d0b21b544dd0c3839800000000
+# xmidt-org/talaria
+7ce9501639c5b1184386f8c600000000
+# xmidt-org/test (Go proxy module)
+5eca6cb1de3d0b7ad6f3088500000000
+# xmidt-org/webpa-common
+415be986744bc0837a38130b00000000
+# xmidt-org/wrp-go
+8eff986fde802fc42086f5c900000000
+# npm/@lightningjs/ui-components
+40b00c0764d6df77e3c29d4200000000
+# rdkb/components/generic/notify_comp
+3f7baa02e39b402632d04bf400000000
+# rdk/components/generic/webpa-video
+0fc9d459f397eb8a6350b87900000000
+# rdkb/components/opensource/ccsp/CcspMisc
+a97d6e4f6009d831bc64983400000000
+# rdkb/components/opensource/ccsp/CcspSafeNAT
+c26e550e95018ee027b5160a00000000
+# rdkb/components/opensource/ccsp/hotspot
+7f25efd5533e29f3e140153b00000000
+# rdkb/components/opensource/ccsp/PowerManager
+60e419ff88628fa7ffd68ff800000000
+# rdkb/components/opensource/ccsp/webpa-broadband
+ae7e58b7c786187658fff47000000000
