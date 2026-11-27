@@ -385,3 +385,103 @@ c26e550e95018ee027b5160a00000000
 60e419ff88628fa7ffd68ff800000000
 # rdkb/components/opensource/ccsp/webpa-broadband
 ae7e58b7c786187658fff47000000000
+# xmidt-org/hashy (Go proxy module)
+75d6175cd3b6ffce353befc500000000
+# xmidt-org/mockitmetrics (Go proxy module)
+925e07adcef63d2a68ff44ad00000000
+# xmidt-org/dnstxtjwt (Go proxy module)
+a37335b66655a8d930340fac00000000
+# xmidt-org/wrpslog (Go proxy module)
+0de08d0bef81331c51a6038900000000
+# xmidt-org/device-scheduler (Go proxy module)
+5b5b747c41955fe09c38944300000000
+# xmidt-org/idock (Go proxy module)
+71b3f37bede17a625962100900000000
+# xmidt-org/wrpnng (Go proxy module)
+f277bc897a79b591ba7c8f3400000000
+# xmidt-org/eventor (Go proxy module)
+9f9307cee2da7fe3dc55262d00000000
+# xmidt-org/wrpmetadata (Go proxy module)
+e44dedd9a61ac6a1186be3ef00000000
+# xmidt-org/skeleton (Go proxy module)
+5d62a3ed29add46d5a5e0b4900000000
+# xmidt-org/wrpssp (Go proxy module)
+d898d303f421b6ff0f8588db00000000
+# xmidt-org/jwskeychain (Go proxy module)
+749ab0633ab5f206089c0b8500000000
+# xmidt-org/clortho (Go proxy module)
+aaa316543e464d4f39e91cff00000000
+# xmidt-org/wrp-listener (Go proxy module)
+ae7fd4f78a0bf7f1b9fbb06e00000000
+# xmidt-org/wrp-listener-examples (Go proxy module)
+24d5eea4cfa7824386a0252800000000
+# xmidt-org/glaukos (Go proxy module)
+a6d83127bfd87c3b50b8bd7600000000
+# xmidt-org/certorder (Go proxy module)
+f9ad54af0154614f6e5212e300000000
+# xmidt-org/wrpkafka (Go proxy module)
+81f2f9c2b0c710b76e419bf600000000
+# xmidt-org/candlelight (Go proxy module)
+e40ac37c8550ca0a70733d0600000000
+# xmidt-org/urlegit (Go proxy module)
+a53947addfcdcc866d98147c00000000
+# xmidt-org/wrphttp (Go proxy module)
+ea8687d29345d6baf812e20600000000
+# xmidt-org/splitter (Go proxy module)
+7bb733dc6ec4172e05e43ad400000000
+# xmidt-org/httpaux (Go proxy module)
+613dd1299dfbdf335771e97900000000
+# xmidt-org/xmidt-agent (Go proxy module)
+81c35acb1bb8ab6c93dbdca200000000
+# xmidt-org/arrange (Go proxy module)
+b8fd85c77c97cb3b44597c5500000000
+# xmidt-org/wrp-go/v5 (Go proxy module)
+1e3d6efcf9246c0c54f6e24800000000
+# xmidt-org/rbus-go (Go proxy module)
+c95dca4a24d2a323a67c559b00000000
+# xmidt-org/gokeepachangelog (Go proxy module)
+7dad86fda3de3cd087f59dd900000000
+# xmidt-org/themis (Go proxy module)
+4962c8a9957f617e641318e100000000
+# xmidt-org/webhook-schema (Go proxy module)
+96cad95772c605d8ba3cd32200000000
+# xmidt-org/praetor (Go proxy module)
+109c4a539d91d572ac1ba4a700000000
+# xmidt-org/securly (Go proxy module)
+c1647b15feb5b4418c0f169400000000
+# xmidt-org/argus-dynamodb (Go proxy module)
+74f4aad95d361cb301f5da3300000000
+# xmidt-org/wrpzap (Go proxy module)
+5927877a050b04d9fdb5234700000000
+# xmidt-org/picnic (Go proxy module)
+4cb493b6bda1054b878d390000000000
+# xmidt-org/tr1d1um (Go proxy module)
+104c498e2852f0befa9a062100000000
+# xmidt-org/touchstone (Go proxy module)
+32cee51ce26673ff01e41faf00000000
+# xmidt-org/haelu (Go proxy module)
+6e96435b54f811a9baaf12c900000000
+# xmidt-org/scytale (Go proxy module)
+71fe0e59342ac5573bfc12f700000000
+# xmidt-org/argus (Go proxy module)
+b810f238516150adc4b0bae300000000
+# xmidt-org/medley (Go proxy module)
+58f187ef9a9aaf8a47a33ffc00000000
+# xmidt-org/chronon (Go proxy module)
+2b0db273f82f5d505d4df27700000000
+# xmidt-org/dms (Go proxy module)
+21b38495c2f0891a469cabf100000000
+# xmidt-org/sallust (Go proxy module)
+c46f27dae9ab1362d746743000000000
+# xmidt-org/vouch (Go proxy module)
+3c639efccaa7953fd7464ded00000000
+# xmidt-org/xmidt-event-streams (Go proxy module)
+bb46afa042cdae2ea8b8473300000000
+# xmidt-org/ancla (Go proxy module)
+cd559e8d31cc535b3314144700000000
+# xmidt-org/retry (Go proxy module)
+47d8de78e575d078c100517000000000
+# xmidt-org/mitto (Go proxy module)
+e3bdcb8705586a5168545f4000000000
+# xmidt-org/xmidt (Go proxy module)
+ba1e21ae4bbf2ef55ad5f3e500000000
