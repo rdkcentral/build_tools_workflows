@@ -17,14 +17,14 @@ jobs:
     name: Fossid Annotate PR
     runs-on: ubuntu-latest
     container:
-      image: quay.io/fossid/fossid-toolbox:1.5.29
+      image: quay.io/fossid/fossid-toolbox:1.8.6
       credentials:
         username: ${{ secrets.FOSSID_CONTAINER_USERNAME }}
         password: ${{ secrets.FOSSID_CONTAINER_PASSWORD }}
     steps:
 
       - name: Setup Curl
-        run: apk add --no-cache curl
+        run: apt-get update && apt-get install -y --no-install-recommends curl
 
       - name: Checkout Code
         uses: actions/checkout@v5
@@ -40,8 +40,8 @@ jobs:
         run: |
           fossid \
             diffscan \
-            --fossid-host $FOSSID_HOST_USERNAME \
-            --fossid-token $FOSSID_HOST_TOKEN \
+            --host $FOSSID_HOST_USERNAME \
+            --token $FOSSID_HOST_TOKEN \
             --format github \
             --fail \
             --ignore-projects /tmp/ignore_projects_fossid
