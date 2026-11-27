@@ -24,7 +24,7 @@ jobs:
     steps:
 
       - name: Setup Curl
-        run: apk add --no-cache curl
+        run: apt-get update && apt-get install -y --no-install-recommends curl
 
       - name: Checkout Code
         uses: actions/checkout@v5
